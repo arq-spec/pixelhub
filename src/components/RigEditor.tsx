@@ -334,6 +334,12 @@ function RigItemCard({
           onChange={(e) => set({ name: e.target.value })}
         />
         <Button
+          variant="icon" title="Duplicar peça"
+          onClick={() => dispatch({ type: 'duplicateRigItem', rigId, itemId: item.id })}
+        >
+          ⧉
+        </Button>
+        <Button
           variant="icon" title="Remover peça"
           onClick={() => dispatch({ type: 'removeRigItem', rigId, itemId: item.id })}
         >

@@ -143,6 +143,7 @@ export type Action =
   | { type: 'patchRig'; rigId: string; patch: Partial<Omit<Rig, 'items'>> }
   | { type: 'toggleRig'; index: number; rigId: string; active: boolean }
   | { type: 'addRigItem'; rigId: string; kind: RigKind; panelId?: string }
+  | { type: 'duplicateRigItem'; rigId: string; itemId: string }
   | { type: 'removeRigItem'; rigId: string; itemId: string }
   | { type: 'patchRigItem'; rigId: string; itemId: string; patch: Partial<RigItem> }
   /** Liga ou desliga placas do painel (formato livre). */
@@ -385,6 +386,24 @@ export function reducer(state: Project, action: Action): Project {
         ...r,
         items: [...r.items, makeRigItem(action.kind, { panelId: action.panelId ?? null })],
       }))
+
+    case 'duplicateRigItem':
+      return mapRig(state, action.rigId, (r) => {
+        const at = r.items.findIndex((i) => i.id === action.itemId)
+        if (at < 0) return r
+        const source = r.items[at]
+        // A cópia entra ao lado da original, não sobre ela: depois de uma
+        // fila de repetições, começa onde a fila termina.
+        const offset =
+          source.count > 1 ? source.count * source.stepMm : source.wMm
+        const items = [...r.items]
+        items.splice(at + 1, 0, {
+          ...source,
+          id: uid('i'),
+          x: source.x + offset,
+        })
+        return { ...r, items }
+      })
 
     case 'removeRigItem':
       return mapRig(state, action.rigId, (r) => ({
