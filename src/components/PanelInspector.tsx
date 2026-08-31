@@ -1,10 +1,11 @@
 import { useState, type Dispatch } from 'react'
 import {
-  FIELD_LABELS, FIELD_ORDER, PITCHES, POWER_KVA_PER_M2, WEIGHT_KG_PER_M2,
+  FIELD_LABELS, FIELD_ORDER, PITCHES, POWER_KVA_PER_M2, REGION_COLORS, WEIGHT_KG_PER_M2,
   type PanelConfig, type PitchId, type Project, type Sheet,
 } from '../types'
+import { GridEditor, type GridMode } from './GridEditor'
 import { sheetPanels, syncPitchNote, type Action } from '../lib/store'
-import { computeMetrics, snapToModule, type Metrics } from '../lib/calc'
+import { computeMetrics, regionMetrics, snapToModule, type Metrics } from '../lib/calc'
 import { meters, num } from '../lib/format'
 import { Button, Field, NumberInput, Section, TextInput, Toggle } from './ui'
 
@@ -58,6 +59,11 @@ export function PanelInspector({
           checked={sheet.showDimensions}
           onChange={(v) => setSheet({ showDimensions: v })}
           label="Mostrar cotas de largura e altura"
+        />
+        <Toggle
+          checked={sheet.showColorLegend}
+          onChange={(v) => setSheet({ showColorLegend: v })}
+          label="Mostrar as cores no quadro de legendas"
         />
       </Section>
 
@@ -301,6 +307,8 @@ function PanelCard({
             ))}
           </div>
 
+          <ShapeAndRegions panel={panel} m={m} dispatch={dispatch} />
+
           {m.rows.hasFiller ? (
             <p className="note note--ok">
               A sobra de altura fecha em {m.fillerCount} placa{m.fillerCount > 1 ? 's' : ''} de{' '}
@@ -328,6 +336,179 @@ function PanelCard({
           <PanelMetrics m={m} />
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/** Forma do painel, cor e repartições de conteúdo. */
+function ShapeAndRegions({
+  panel, m, dispatch,
+}: { panel: PanelConfig; m: Metrics; dispatch: Dispatch<Action> }) {
+  const [mode, setMode] = useState<GridMode>('plates')
+  const [activeRegionId, setActiveRegionId] = useState<string | null>(null)
+  const setPanel = (patch: Partial<PanelConfig>) =>
+    dispatch({ type: 'patchPanel', panelId: panel.id, patch })
+
+  const region = panel.regions.find((r) => r.id === activeRegionId) ?? null
+
+  return (
+    <div className="shape">
+      <div className="shape__modes">
+        <button
+          type="button"
+          className={`chip${mode === 'plates' ? ' is-on' : ''}`}
+          onClick={() => setMode('plates')}
+        >
+          Placas
+        </button>
+        <button
+          type="button"
+          className={`chip${mode === 'region' ? ' is-on' : ''}`}
+          onClick={() => {
+            setMode('region')
+            if (!activeRegionId && panel.regions[0]) setActiveRegionId(panel.regions[0].id)
+          }}
+        >
+          Repartições
+        </button>
+        {panel.removedCells.length ? (
+          <button
+            type="button"
+            className="chip"
+            onClick={() => setPanel({ removedCells: [] })}
+            title="Repor todas as placas"
+          >
+            Repor tudo
+          </button>
+        ) : null}
+      </div>
+
+      <GridEditor
+        panel={panel}
+        mode={mode}
+        activeRegionId={activeRegionId}
+        dispatch={dispatch}
+      />
+
+      <div className="grid2">
+        <Field label="Cor do painel">
+          <ColorPicker
+            value={panel.color}
+            onChange={(color) => setPanel({ color })}
+          />
+        </Field>
+        <Field label="Na legenda">
+          <Toggle
+            checked={panel.showInLegend}
+            onChange={(v) => setPanel({ showInLegend: v })}
+            label="Listar cores"
+          />
+        </Field>
+      </div>
+
+      <div className="regions">
+        <div className="regions__head">
+          <span>Repartições ({panel.regions.length})</span>
+          <Button onClick={() => dispatch({ type: 'addRegion', panelId: panel.id })}>
+            + Repartição
+          </Button>
+        </div>
+
+        {panel.regions.map((r) => {
+          const rm = regionMetrics(panel, m, r)
+          const isActive = r.id === activeRegionId
+          return (
+            <div key={r.id} className={`region${isActive && mode === 'region' ? ' is-active' : ''}`}>
+              <button
+                type="button"
+                className="region__pick"
+                title="Pintar esta repartição na grade"
+                onClick={() => {
+                  setActiveRegionId(r.id)
+                  setMode('region')
+                }}
+              >
+                <span className="region__dot" style={{ background: r.color }} />
+              </button>
+              <input
+                className="region__name"
+                value={r.name}
+                onChange={(e) =>
+                  dispatch({
+                    type: 'patchRegion', panelId: panel.id, regionId: r.id,
+                    patch: { name: e.target.value },
+                  })
+                }
+              />
+              <span className="region__size">
+                {rm ? `${meters(rm.widthMm)}×${meters(rm.heightMm)}m · ${rm.pixelsW}×${rm.pixelsH}p` : 'sem placas'}
+              </span>
+              <ColorPicker
+                value={r.color}
+                allowNone={false}
+                onChange={(color) =>
+                  dispatch({
+                    type: 'patchRegion', panelId: panel.id, regionId: r.id,
+                    patch: { color: color ?? r.color },
+                  })
+                }
+              />
+              <Button
+                variant="icon" title="Excluir repartição"
+                onClick={() => {
+                  dispatch({ type: 'removeRegion', panelId: panel.id, regionId: r.id })
+                  if (isActive) setActiveRegionId(null)
+                }}
+              >
+                ✕
+              </Button>
+            </div>
+          )
+        })}
+
+        {region && mode === 'region' ? (
+          <p className="hint">
+            Pintando <strong>{region.name}</strong>. Uma placa pertence a uma repartição por vez.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Seletor de cor: paleta sugerida, cor livre e a opção de não ter cor. */
+function ColorPicker({
+  value, onChange, allowNone = true,
+}: { value: string | null; onChange: (v: string | null) => void; allowNone?: boolean }) {
+  return (
+    <div className="cpick">
+      {allowNone ? (
+        <button
+          type="button"
+          className={`cpick__none${value ? '' : ' is-on'}`}
+          title="Sem cor"
+          onClick={() => onChange(null)}
+        >
+          ⃠
+        </button>
+      ) : null}
+      {REGION_COLORS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          className={`cpick__dot${value?.toLowerCase() === c ? ' is-on' : ''}`}
+          style={{ background: c }}
+          title={c}
+          onClick={() => onChange(c)}
+        />
+      ))}
+      <input
+        type="color"
+        className="cpick__custom"
+        value={value ?? '#e5352b'}
+        title="Cor personalizada"
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   )
 }

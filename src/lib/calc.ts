@@ -3,7 +3,11 @@ import {
   POWER_KVA_PER_M2,
   WEIGHT_KG_PER_M2,
   type PanelConfig,
+  type PanelRegion,
 } from '../types'
+
+/** Chave de uma posição da grade. */
+export const cellKey = (col: number, row: number) => `${col},${row}`
 
 /**
  * Tipo de placa numa faixa do desenho.
@@ -61,6 +65,12 @@ export interface Metrics {
   pixelsPerMeter: number
   /** Algum eixo exige recorte de placa. */
   hasCut: boolean
+  /** Arestas das colunas e das linhas, em mm a partir da origem do painel. */
+  colEdgesMm: number[]
+  rowEdgesMm: number[]
+  /** Placas efetivamente presentes (a grade menos as posições removidas). */
+  activeCount: number
+  removedCount: number
 }
 
 const EPS = 0.01
@@ -120,6 +130,10 @@ function axis(
   }
 }
 
+/** Uma posição da grade tem placa? */
+export const hasPlate = (panel: PanelConfig, col: number, row: number) =>
+  !panel.removedCells.includes(cellKey(col, row))
+
 export function computeMetrics(panel: PanelConfig): Metrics {
   const pitch = PITCHES[panel.pitch]
 
@@ -130,15 +144,38 @@ export function computeMetrics(panel: PanelConfig): Metrics {
     remainderFirst: true,
   })
 
-  const areaM2 = (panel.widthMm / 1000) * (panel.heightMm / 1000)
-  const fillerCount = rows.hasFiller ? cols.total : 0
+  const colEdgesMm = moduleEdges(cols)
+  const rowEdgesMm = moduleEdges(rows)
+
+  // A área é a soma das placas presentes: num painel de formato livre ela é
+  // menor que largura x altura, e é ela que dita peso e consumo.
+  let areaM2 = 0
+  let activeCount = 0
+  for (let r = 0; r < rows.total; r++) {
+    for (let c = 0; c < cols.total; c++) {
+      if (!hasPlate(panel, c, r)) continue
+      activeCount++
+      areaM2 +=
+        ((colEdgesMm[c + 1] - colEdgesMm[c]) / 1000) *
+        ((rowEdgesMm[r + 1] - rowEdgesMm[r]) / 1000)
+    }
+  }
+
+  const total = cols.total * rows.total
+  const fillerCount = rows.hasFiller
+    ? Array.from({ length: cols.total }, (_, c) => c).filter((c) => hasPlate(panel, c, 0)).length
+    : 0
 
   return {
+    colEdgesMm,
+    rowEdgesMm,
+    activeCount,
+    removedCount: total - activeCount,
     widthMm: panel.widthMm,
     heightMm: panel.heightMm,
     cols,
     rows,
-    moduleCount: cols.total * rows.total,
+    moduleCount: activeCount,
     fullModuleCount: cols.full * rows.full,
     fillerCount,
     fillerSizeMm: panel.moduleWMm,
@@ -181,4 +218,104 @@ export function runKinds(a: Axis): RunKind[] {
 export function snapToModule(sizeMm: number, moduleMm: number): number {
   if (moduleMm <= 0) return sizeMm
   return Math.max(1, Math.round(sizeMm / moduleMm)) * moduleMm
+}
+
+
+/** Posições de uma repartição, como conjunto para consulta rápida. */
+export const regionCellSet = (region: PanelRegion) => new Set(region.cells)
+
+export interface CellRect { col: number; row: number; x0: number; y0: number; x1: number; y1: number }
+
+/** Retângulos das posições que satisfazem `keep`, em mm a partir da origem. */
+export function cellRects(
+  m: Metrics,
+  keep: (col: number, row: number) => boolean,
+): CellRect[] {
+  const out: CellRect[] = []
+  for (let r = 0; r < m.rows.total; r++) {
+    for (let c = 0; c < m.cols.total; c++) {
+      if (!keep(c, r)) continue
+      out.push({
+        col: c, row: r,
+        x0: m.colEdgesMm[c], y0: m.rowEdgesMm[r],
+        x1: m.colEdgesMm[c + 1], y1: m.rowEdgesMm[r + 1],
+      })
+    }
+  }
+  return out
+}
+
+export interface Segment { x1: number; y1: number; x2: number; y2: number }
+
+/**
+ * Contorno de um conjunto de posições: os lados que separam o conjunto de
+ * tudo o que está fora dele. É assim que sai o traço em volta do painel e o
+ * tracejado que divide as repartições.
+ */
+export function outlineOf(
+  m: Metrics,
+  inside: (col: number, row: number) => boolean,
+): Segment[] {
+  const segs: Segment[] = []
+  const at = (c: number, r: number) =>
+    c >= 0 && r >= 0 && c < m.cols.total && r < m.rows.total && inside(c, r)
+
+  for (let r = 0; r < m.rows.total; r++) {
+    for (let c = 0; c < m.cols.total; c++) {
+      if (!inside(c, r)) continue
+      const x0 = m.colEdgesMm[c], x1 = m.colEdgesMm[c + 1]
+      const y0 = m.rowEdgesMm[r], y1 = m.rowEdgesMm[r + 1]
+      if (!at(c, r - 1)) segs.push({ x1: x0, y1: y0, x2: x1, y2: y0 })
+      if (!at(c, r + 1)) segs.push({ x1: x0, y1: y1, x2: x1, y2: y1 })
+      if (!at(c - 1, r)) segs.push({ x1: x0, y1: y0, x2: x0, y2: y1 })
+      if (!at(c + 1, r)) segs.push({ x1: x1, y1: y0, x2: x1, y2: y1 })
+    }
+  }
+  return segs
+}
+
+export interface RegionMetrics {
+  region: PanelRegion
+  /** Envoltória da repartição, em mm. */
+  widthMm: number
+  heightMm: number
+  pixelsW: number
+  pixelsH: number
+  plates: number
+}
+
+/** Medidas de uma repartição: envoltória em metros e resolução. */
+export function regionMetrics(
+  panel: PanelConfig, m: Metrics, region: PanelRegion,
+): RegionMetrics | null {
+  const set = regionCellSet(region)
+  let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity, plates = 0
+  for (let r = 0; r < m.rows.total; r++) {
+    for (let c = 0; c < m.cols.total; c++) {
+      if (!set.has(cellKey(c, r)) || !hasPlate(panel, c, r)) continue
+      plates++
+      c0 = Math.min(c0, c); c1 = Math.max(c1, c)
+      r0 = Math.min(r0, r); r1 = Math.max(r1, r)
+    }
+  }
+  if (!plates) return null
+
+  const widthMm = m.colEdgesMm[c1 + 1] - m.colEdgesMm[c0]
+  const heightMm = m.rowEdgesMm[r1 + 1] - m.rowEdgesMm[r0]
+  const axisPixels = (a: number, b: number, edges: number[]) => {
+    let sum = 0
+    for (let i = a; i <= b; i++) {
+      sum += Math.round(((edges[i + 1] - edges[i]) / 1000) * m.pixelsPerMeter)
+    }
+    return sum
+  }
+
+  return {
+    region,
+    widthMm,
+    heightMm,
+    pixelsW: axisPixels(c0, c1, m.colEdgesMm),
+    pixelsH: axisPixels(r0, r1, m.rowEdgesMm),
+    plates,
+  }
 }

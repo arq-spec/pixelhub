@@ -40,7 +40,38 @@ export interface PanelConfig {
   moduleWMm: number
   /** Altura do módulo em milímetros. */
   moduleHMm: number
+  /**
+   * Posições sem placa, como "coluna,linha" (base 0). Permite painéis de
+   * formato livre — pórtico, escada, vão central — dentro da mesma grade.
+   */
+  removedCells: string[]
+  /** Repartições de conteúdo do painel. */
+  regions: PanelRegion[]
+  /** Cor de identificação do painel na folha. */
+  color: string | null
+  /** Lista este painel e suas cores no quadro de legendas. */
+  showInLegend: boolean
 }
+
+/**
+ * Uma repartição de conteúdo: o trecho do painel que recebe um sinal ou uma
+ * peça de arte própria. É um conjunto de posições, não um retângulo, então
+ * comporta recortes em L, pórticos e vãos.
+ */
+export interface PanelRegion {
+  id: string
+  /** Nome impresso na folha, ex.: "PARTE 1". */
+  name: string
+  /** Posições que compõem a repartição, como "coluna,linha". */
+  cells: string[]
+  /** Cor do contorno tracejado e do preenchimento. */
+  color: string
+}
+
+/** Cores sugeridas para painéis e repartições. */
+export const REGION_COLORS = [
+  '#e5352b', '#1f6fd0', '#12946b', '#d98324', '#7d4fd1', '#c62a72',
+] as const
 
 /** Linhas do quadro de dados que podem ser ligadas ou desligadas na folha. */
 export type FieldId =
@@ -51,9 +82,10 @@ export type FieldId =
   | 'peso'
   | 'consumo'
   | 'escala'
+  | 'reparticoes'
 
 export const FIELD_ORDER: FieldId[] = [
-  'dimensao', 'pixels', 'modulos', 'area', 'peso', 'consumo', 'escala',
+  'dimensao', 'pixels', 'modulos', 'area', 'peso', 'consumo', 'escala', 'reparticoes',
 ]
 
 export const FIELD_LABELS: Record<FieldId, string> = {
@@ -64,6 +96,7 @@ export const FIELD_LABELS: Record<FieldId, string> = {
   peso: 'Peso',
   consumo: 'Consumo',
   escala: 'Escala (ESC. 1:x)',
+  reparticoes: 'Repartições',
 }
 
 export type FieldVisibility = Record<FieldId, boolean>
@@ -77,6 +110,7 @@ export const DEFAULT_FIELDS: FieldVisibility = {
   peso: true,
   consumo: true,
   escala: false,
+  reparticoes: true,
 }
 
 export interface Sheet {
@@ -100,6 +134,8 @@ export interface Sheet {
   showDimensions: boolean
   /** Quais linhas do quadro de dados aparecem na folha. */
   fields: FieldVisibility
+  /** Mostra as cores dos painéis no quadro de legendas. */
+  showColorLegend: boolean
 }
 
 export interface Brand {

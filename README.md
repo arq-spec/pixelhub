@@ -42,6 +42,20 @@ processador enxerga o painel.
 - **Lista compacta** — cada painel do catálogo recolhe numa linha só, com nome,
   medida, pitch e número de módulos, para a coluna de edição não crescer junto
   com o projeto.
+- **Formato livre** — a grade é editável placa a placa: clique tira ou repõe,
+  arraste age num trecho inteiro. Serve para pórtico, escada, vão central ou
+  qualquer recorte. A linha `PAINEL:` continua mostrando a envoltória, mas
+  **área, peso e consumo passam a contar só as placas presentes** — um pórtico
+  de 8,00×4,50 m com vão central tem 18 m², não 36.
+- **Repartições** — trechos do painel que recebem sinal ou arte própria. Cada
+  um tem nome, cor e um contorno tracejado no desenho, e entra no quadro de
+  dados com a sua envoltória e resolução: `PARTE 1: 8,00x1,50m · 2688x504p`.
+  Uma placa pertence a uma repartição por vez, e a repartição é um conjunto de
+  posições — logo comporta formas em L, não só retângulos.
+- **Cores** — o painel e cada repartição aceitam cor, da paleta sugerida ou
+  livre. As placas saem com a cor esmaecida e o contorno na cor cheia. Um
+  campo na folha lista, no quadro de legendas, a cor seguida do painel e das
+  suas repartições.
 - **Placas de preenchimento** — quando a altura sobra exatamente meia placa
   (um painel de 2,50 m com gabinete 500×1000), a sobra é completada com placas
   quadradas de 500×500 **na fileira superior**, desenhadas como peças reais e

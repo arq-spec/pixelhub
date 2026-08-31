@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer } from 'react'
 import {
-  DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES,
-  type FieldId, type PanelConfig, type Project, type Sheet,
+  DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES, REGION_COLORS,
+  type FieldId, type PanelConfig, type PanelRegion, type Project, type Sheet,
 } from '../types'
 import { todayIso } from './format'
 import { DEFAULT_LOGO_DATA_URI } from './brandLogo'
@@ -43,6 +43,10 @@ export function makePanel(partial?: Partial<PanelConfig>): PanelConfig {
     pitch: 'P2.9',
     moduleWMm: DEFAULT_MODULE_MM.w,
     moduleHMm: DEFAULT_MODULE_MM.h,
+    removedCells: [],
+    regions: [],
+    color: null,
+    showInLegend: true,
     ...partial,
   }
 }
@@ -54,6 +58,7 @@ export function makeSheet(partial?: Partial<Sheet>): Sheet {
     notes: [...DEFAULT_NOTES],
     numberOverride: null,
     showDimensions: false,
+    showColorLegend: true,
     activePanelIds: [],
     ...partial,
     fields: { ...DEFAULT_FIELDS, ...(partial?.fields ?? {}) },
@@ -97,11 +102,23 @@ export type Action =
   | { type: 'patchPanel'; panelId: string; patch: Partial<PanelConfig> }
   /** Liga ou desliga um painel do projeto nesta folha. */
   | { type: 'togglePanel'; index: number; panelId: string; active: boolean }
+  /** Liga ou desliga placas do painel (formato livre). */
+  | { type: 'setCells'; panelId: string; cells: string[]; present: boolean }
+  | { type: 'addRegion'; panelId: string }
+  | { type: 'removeRegion'; panelId: string; regionId: string }
+  | { type: 'patchRegion'; panelId: string; regionId: string; patch: Partial<PanelRegion> }
+  /** Inclui ou retira posições de uma repartição. */
+  | { type: 'setRegionCells'; panelId: string; regionId: string; cells: string[]; inside: boolean }
   | { type: 'clearOverrides' }
   | { type: 'load'; project: Project }
   | { type: 'reset' }
 
 const clampIndex = (i: number, len: number) => Math.max(0, Math.min(i, len - 1))
+
+/** Aplica uma transformação ao painel do catálogo, mantendo o resto intacto. */
+function mapPanel(state: Project, panelId: string, fn: (p: PanelConfig) => PanelConfig): Project {
+  return { ...state, panels: state.panels.map((p) => (p.id === panelId ? fn(p) : p)) }
+}
 
 /** Aplica uma transformação à folha em `index`, mantendo o resto intacto. */
 function mapSheet(state: Project, index: number, fn: (s: Sheet) => Sheet): Project {
@@ -240,6 +257,65 @@ export function reducer(state: Project, action: Action): Project {
           )
         : state.sheets
       return { ...state, panels, sheets }
+    }
+
+    case 'setCells': {
+      const cells = new Set(action.cells)
+      return mapPanel(state, action.panelId, (p) => ({
+        ...p,
+        removedCells: action.present
+          ? p.removedCells.filter((key) => !cells.has(key))
+          : [...new Set([...p.removedCells, ...action.cells])],
+      }))
+    }
+
+    case 'addRegion':
+      return mapPanel(state, action.panelId, (p) => ({
+        ...p,
+        regions: [
+          ...p.regions,
+          {
+            id: uid('r'),
+            name: `PARTE ${p.regions.length + 1}`,
+            cells: [],
+            color: REGION_COLORS[p.regions.length % REGION_COLORS.length],
+          },
+        ],
+      }))
+
+    case 'removeRegion':
+      return mapPanel(state, action.panelId, (p) => ({
+        ...p,
+        regions: p.regions.filter((r) => r.id !== action.regionId),
+      }))
+
+    case 'patchRegion':
+      return mapPanel(state, action.panelId, (p) => ({
+        ...p,
+        regions: p.regions.map((r) =>
+          r.id === action.regionId ? { ...r, ...action.patch } : r,
+        ),
+      }))
+
+    case 'setRegionCells': {
+      const cells = new Set(action.cells)
+      return mapPanel(state, action.panelId, (p) => ({
+        ...p,
+        regions: p.regions.map((r) => {
+          if (r.id !== action.regionId) {
+            // Uma posição pertence a uma repartição de cada vez.
+            return action.inside
+              ? { ...r, cells: r.cells.filter((key) => !cells.has(key)) }
+              : r
+          }
+          return {
+            ...r,
+            cells: action.inside
+              ? [...new Set([...r.cells, ...action.cells])]
+              : r.cells.filter((key) => !cells.has(key)),
+          }
+        }),
+      }))
     }
 
     case 'togglePanel':

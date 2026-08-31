@@ -11,7 +11,10 @@ import {
   SIDEBAR_W,
   STAMP,
 } from './sheetSpec'
-import { computeMetrics, moduleEdges, runKinds, type Metrics } from './calc'
+import {
+  cellKey, cellRects, computeMetrics, hasPlate, outlineOf, regionCellSet,
+  regionMetrics, runKinds, type Metrics,
+} from './calc'
 import { sheetPanels } from './store'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
@@ -89,6 +92,17 @@ export function pickScale(widthMm: number, heightMm: number, availW: number, ava
   return SCALE_LADDER[SCALE_LADDER.length - 1]
 }
 
+/** Versão clara da cor, para preencher a placa sem apagar o traço por cima. */
+export function tint(hex: string, amount = 0.86): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return COLORS.moduleFill
+  const n = parseInt(m[1], 16)
+  const mix = (c: number) => Math.round(c + (255 - c) * amount)
+  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    .map((c) => mix(c).toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
 /** kg e kVA saem sem casa decimal quando o valor é inteiro, como no modelo. */
 function trim(value: number, decimals: number): string {
   const rounded = Number(value.toFixed(decimals))
@@ -108,7 +122,7 @@ function modulesLabel(m: Metrics): string {
 
 /** Linhas do quadro de dados, como pares rótulo/valor, já filtradas. */
 export function specLines(
-  sheet: Sheet, _panel: PanelConfig, m: Metrics, scaleDen: number,
+  sheet: Sheet, panel: PanelConfig, m: Metrics, scaleDen: number,
 ): Array<[string, string]> {
   // O nome do painel já encabeça o desenho; aqui a linha é sempre "PAINEL:".
   const all: Array<[FieldId, string, string]> = [
@@ -120,7 +134,21 @@ export function specLines(
     ['consumo', 'CONSUMO:', `${trim(m.powerKva, 1)}kVa`],
     ['escala', 'ESCALA:', `1:${num(scaleDen, scaleDen % 1 ? 1 : 0)}`],
   ]
-  return all.filter(([id]) => sheet.fields[id] !== false).map(([, l, v]) => [l, v])
+  const lines = all
+    .filter(([id]) => sheet.fields[id] !== false)
+    .map(([, l, v]) => [l, v] as [string, string])
+
+  if (sheet.fields.reparticoes !== false) {
+    for (const region of panel.regions) {
+      const rm = regionMetrics(panel, m, region)
+      if (!rm) continue
+      lines.push([
+        `${region.name.trim().toUpperCase() || 'PARTE'}:`,
+        `${meters(rm.widthMm)}x${meters(rm.heightMm)}m · ${rm.pixelsW}x${rm.pixelsH}p`,
+      ])
+    }
+  }
+  return lines
 }
 
 /** Rótulo da folha: numeração manual quando houver, senão a sequência. */
@@ -214,33 +242,79 @@ function drawPanelCell(
     )
   }
 
-  const colEdges = moduleEdges(m.cols).map((e) => x + e / den)
-  const rowEdges = moduleEdges(m.rows).map((e) => y + e / den)
   const colKinds = runKinds(m.cols)
   const rowKinds = runKinds(m.rows)
+  /** mm do painel -> mm da folha. */
+  const px = (mm: number) => x + mm / den
+  const py = (mm: number) => y + mm / den
 
-  activeLayer = LAYERS.modules
-  for (let r = 0; r < rowEdges.length - 1; r++) {
-    for (let c = 0; c < colEdges.length - 1; c++) {
-      // Só o recorte sai tracejado; a placa de preenchimento é uma peça real.
-      const isCut = colKinds[c] === 'cut' || rowKinds[r] === 'cut'
-      prims.push({
-        kind: 'rect', layer: LAYERS.modules,
-        x: colEdges[c], y: rowEdges[r],
-        w: colEdges[c + 1] - colEdges[c],
-        h: rowEdges[r + 1] - rowEdges[r],
-        fill: COLORS.moduleFill,
-        stroke: COLORS.moduleStroke,
-        width: 0.3,
-        dashed: isCut,
-      })
-    }
+  // Cor de fundo de cada posição: a da repartição, senão a do painel.
+  const regionOf = new Map<string, string>()
+  for (const region of panel.regions) {
+    for (const key of region.cells) regionOf.set(key, region.color)
+  }
+  const fillFor = (c: number, r: number) => {
+    const color = regionOf.get(cellKey(c, r)) ?? panel.color
+    return color ? tint(color) : COLORS.moduleFill
   }
 
-  prims.push({
-    kind: 'rect', layer: LAYERS.panel, x, y, w, h,
-    stroke: COLORS.moduleStroke, width: 0.55,
-  })
+  activeLayer = LAYERS.modules
+  for (const cell of cellRects(m, (c, r) => hasPlate(panel, c, r))) {
+    // Só o recorte sai tracejado; a placa de preenchimento é uma peça real.
+    const isCut = colKinds[cell.col] === 'cut' || rowKinds[cell.row] === 'cut'
+    prims.push({
+      kind: 'rect', layer: LAYERS.modules,
+      x: px(cell.x0), y: py(cell.y0),
+      w: (cell.x1 - cell.x0) / den, h: (cell.y1 - cell.y0) / den,
+      fill: fillFor(cell.col, cell.row),
+      stroke: COLORS.moduleStroke,
+      width: 0.3,
+      dashed: isCut,
+    })
+  }
+
+  // O contorno acompanha a forma real: num pórtico ele desenha o vão.
+  activeLayer = LAYERS.panel
+  const outlineColor = panel.color ?? COLORS.moduleStroke
+  for (const seg of outlineOf(m, (c, r) => hasPlate(panel, c, r))) {
+    prims.push({
+      kind: 'line', layer: LAYERS.panel,
+      x1: px(seg.x1), y1: py(seg.y1), x2: px(seg.x2), y2: py(seg.y2),
+      color: outlineColor, width: 0.55,
+    })
+  }
+
+  // Cada repartição é delimitada pelo seu próprio tracejado.
+  for (const region of panel.regions) {
+    const set = regionCellSet(region)
+    const inside = (c: number, r: number) =>
+      set.has(cellKey(c, r)) && hasPlate(panel, c, r)
+    for (const seg of outlineOf(m, inside)) {
+      prims.push({
+        kind: 'line', layer: LAYERS.panel,
+        x1: px(seg.x1), y1: py(seg.y1), x2: px(seg.x2), y2: py(seg.y2),
+        color: region.color, width: 0.45, dashed: true,
+      })
+    }
+    const rm = regionMetrics(panel, m, region)
+    const label = region.name.trim().toUpperCase()
+    if (rm && label) {
+      // Etiqueta no canto superior esquerdo da envoltória da repartição.
+      const bounds = [...set].map((key) => key.split(',').map(Number))
+      const c0 = Math.min(...bounds.map((b) => b[0]))
+      const r0 = Math.min(...bounds.map((b) => b[1]))
+      prims.push(
+        text(
+          px(m.colEdgesMm[c0]) + 1.2,
+          py(m.rowEdgesMm[r0]) + 3.4 * clamp(k, 0.7, 1),
+          label,
+          clamp(2.8 * k, 1.9, 2.8),
+          region.color,
+          { bold: true },
+        ),
+      )
+    }
+  }
 
   if (sheet.showDimensions) {
     activeLayer = LAYERS.dims
@@ -320,6 +394,7 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
     color: COLORS.ink, width: LEGEND.ruleWidth,
   })
 
+  let legendBottom = LEGEND.boxTop
   const notes = sheet.notes.filter((n) => n.trim().length > 0)
   if (notes.length) {
     prims.push(
@@ -342,6 +417,49 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
           SIDEBAR.x0 + LEGEND.boxPadX,
           LEGEND.boxTop + LEGEND.firstBaseline + i * LEGEND.lineHeight,
           item, LEGEND.itemSize, COLORS.slateText,
+        ),
+      )
+    })
+    legendBottom = LEGEND.boxTop + boxH
+  }
+
+  // ------------------------------------------------------------ cores
+  // Entradas: a cor do painel e, abaixo, a de cada repartição colorida.
+  const legendEntries: Array<{ color: string; label: string; sub?: boolean }> = []
+  if (sheet.showColorLegend) {
+    panels.forEach((panel) => {
+      if (!panel.showInLegend) return
+      const name = panel.name.trim().toUpperCase() || 'PAINEL'
+      if (panel.color) legendEntries.push({ color: panel.color, label: name })
+      for (const region of panel.regions) {
+        const label = region.name.trim().toUpperCase()
+        if (label) legendEntries.push({ color: region.color, label: `${name} · ${label}`, sub: true })
+      }
+    })
+  }
+
+  if (legendEntries.length) {
+    const top = legendBottom + 8
+    prims.push(
+      text(SIDEBAR.x0, top, 'CORES:', LEGEND.obsSize, COLORS.slate, {
+        bold: true, tracking: LEGEND.obsTracking,
+      }),
+    )
+    legendEntries.forEach((entry, i) => {
+      const rowY = top + 5.4 + i * 6.2
+      prims.push({
+        kind: 'rect', layer: LAYERS.frame,
+        x: SIDEBAR.x0 + (entry.sub ? 3 : 0), y: rowY - 2.6,
+        w: 3.4, h: 3.4,
+        fill: entry.color, stroke: COLORS.boxStroke, width: 0.2,
+      })
+      prims.push(
+        text(
+          SIDEBAR.x0 + (entry.sub ? 3 : 0) + 5,
+          rowY,
+          entry.label,
+          LEGEND.itemSize * 0.86,
+          entry.sub ? COLORS.slate : COLORS.slateText,
         ),
       )
     })
