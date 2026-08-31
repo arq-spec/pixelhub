@@ -42,9 +42,12 @@ processador enxerga o painel.
 - **Lista compacta** — cada painel do catálogo recolhe numa linha só, com nome,
   medida, pitch e número de módulos, para a coluna de edição não crescer junto
   com o projeto.
-- **Formato livre** — a grade é editável placa a placa: clique tira ou repõe,
-  arraste age num trecho inteiro. Serve para pórtico, escada, vão central ou
-  qualquer recorte. A linha `PAINEL:` continua mostrando a envoltória, mas
+- **Formato livre** — a grade é editável placa a placa, de quatro maneiras:
+  clique numa posição, arraste sobre um trecho, clique no número da régua para
+  agir na coluna ou na linha inteira, ou digite um intervalo (`col 3 a 48`,
+  `lin 2 a 5`) e aplique. Há zoom e um modo de tela cheia, porque num painel de
+  25 m são 50 colunas e a coluna de edição não dá conta. Serve para pórtico,
+  escada, vão central ou qualquer recorte. A linha `PAINEL:` continua mostrando a envoltória, mas
   **área, peso e consumo passam a contar só as placas presentes** — um pórtico
   de 8,00×4,50 m com vão central tem 18 m², não 36.
 - **Repartições** — trechos do painel que recebem sinal ou arte própria. Cada

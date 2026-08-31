@@ -345,57 +345,69 @@ function ShapeAndRegions({
   panel, m, dispatch,
 }: { panel: PanelConfig; m: Metrics; dispatch: Dispatch<Action> }) {
   const [mode, setMode] = useState<GridMode>('plates')
-  const [activeRegionId, setActiveRegionId] = useState<string | null>(null)
+  const [pickedRegionId, setPickedRegionId] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const setPanel = (patch: Partial<PanelConfig>) =>
     dispatch({ type: 'patchPanel', panelId: panel.id, patch })
 
-  const region = panel.regions.find((r) => r.id === activeRegionId) ?? null
+  // Nunca ficar em "nenhuma repartição selecionada" havendo repartições: a
+  // última criada assume, senão criar uma e clicar na grade não faria nada.
+  const region =
+    panel.regions.find((r) => r.id === pickedRegionId) ??
+    panel.regions[panel.regions.length - 1] ??
+    null
+
+  const addRegion = () => {
+    dispatch({ type: 'addRegion', panelId: panel.id })
+    // O id nasce no reducer; a seleção cai na última pela regra acima.
+    setPickedRegionId(null)
+    setMode('region')
+  }
+
+  const editor = (
+    <GridEditor
+      panel={panel}
+      mode={mode}
+      onModeChange={setMode}
+      regions={panel.regions}
+      activeRegionId={region?.id ?? null}
+      onPickRegion={setPickedRegionId}
+      dispatch={dispatch}
+      expanded={expanded}
+    />
+  )
 
   return (
     <div className="shape">
       <div className="shape__modes">
-        <button
-          type="button"
-          className={`chip${mode === 'plates' ? ' is-on' : ''}`}
-          onClick={() => setMode('plates')}
-        >
-          Placas
-        </button>
-        <button
-          type="button"
-          className={`chip${mode === 'region' ? ' is-on' : ''}`}
-          onClick={() => {
-            setMode('region')
-            if (!activeRegionId && panel.regions[0]) setActiveRegionId(panel.regions[0].id)
-          }}
-        >
-          Repartições
-        </button>
+        <Button onClick={() => setExpanded(true)} title="Editar em tela cheia">
+          Ampliar grade
+        </Button>
         {panel.removedCells.length ? (
-          <button
-            type="button"
-            className="chip"
-            onClick={() => setPanel({ removedCells: [] })}
-            title="Repor todas as placas"
-          >
+          <Button onClick={() => setPanel({ removedCells: [] })} title="Repor todas as placas">
             Repor tudo
-          </button>
+          </Button>
         ) : null}
       </div>
 
-      <GridEditor
-        panel={panel}
-        mode={mode}
-        activeRegionId={activeRegionId}
-        dispatch={dispatch}
-      />
+      {editor}
+
+      {expanded ? (
+        <div className="overlay" role="dialog" aria-label="Editar grade do painel">
+          <div className="overlay__panel">
+            <header className="overlay__head">
+              <strong>{panel.name || 'PAINEL'}</strong>
+              <span>{meters(panel.widthMm)}×{meters(panel.heightMm)}m</span>
+              <Button onClick={() => setExpanded(false)}>Fechar</Button>
+            </header>
+            <div className="overlay__body">{editor}</div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid2">
         <Field label="Cor do painel">
-          <ColorPicker
-            value={panel.color}
-            onChange={(color) => setPanel({ color })}
-          />
+          <ColorPicker value={panel.color} onChange={(color) => setPanel({ color })} />
         </Field>
         <Field label="Na legenda">
           <Toggle
@@ -409,22 +421,20 @@ function ShapeAndRegions({
       <div className="regions">
         <div className="regions__head">
           <span>Repartições ({panel.regions.length})</span>
-          <Button onClick={() => dispatch({ type: 'addRegion', panelId: panel.id })}>
-            + Repartição
-          </Button>
+          <Button onClick={addRegion}>+ Repartição</Button>
         </div>
 
         {panel.regions.map((r) => {
           const rm = regionMetrics(panel, m, r)
-          const isActive = r.id === activeRegionId
+          const isActive = r.id === region?.id
           return (
-            <div key={r.id} className={`region${isActive && mode === 'region' ? ' is-active' : ''}`}>
+            <div key={r.id} className={`region${isActive ? ' is-active' : ''}`}>
               <button
                 type="button"
                 className="region__pick"
                 title="Pintar esta repartição na grade"
                 onClick={() => {
-                  setActiveRegionId(r.id)
+                  setPickedRegionId(r.id)
                   setMode('region')
                 }}
               >
@@ -441,7 +451,9 @@ function ShapeAndRegions({
                 }
               />
               <span className="region__size">
-                {rm ? `${meters(rm.widthMm)}×${meters(rm.heightMm)}m · ${rm.pixelsW}×${rm.pixelsH}p` : 'sem placas'}
+                {rm
+                  ? `${meters(rm.widthMm)}×${meters(rm.heightMm)}m · ${rm.pixelsW}×${rm.pixelsH}p`
+                  : 'sem placas'}
               </span>
               <ColorPicker
                 value={r.color}
@@ -455,22 +467,13 @@ function ShapeAndRegions({
               />
               <Button
                 variant="icon" title="Excluir repartição"
-                onClick={() => {
-                  dispatch({ type: 'removeRegion', panelId: panel.id, regionId: r.id })
-                  if (isActive) setActiveRegionId(null)
-                }}
+                onClick={() => dispatch({ type: 'removeRegion', panelId: panel.id, regionId: r.id })}
               >
                 ✕
               </Button>
             </div>
           )
         })}
-
-        {region && mode === 'region' ? (
-          <p className="hint">
-            Pintando <strong>{region.name}</strong>. Uma placa pertence a uma repartição por vez.
-          </p>
-        ) : null}
       </div>
     </div>
   )
