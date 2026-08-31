@@ -324,3 +324,18 @@ body {
 }
 .note--ok { background: #12241d; border: 1px solid #2c5c48; color: #8fd9b8; }
 .note--warn { background: #241d10; border: 1px solid #6b5320; color: #e8c887; }
+
+/* ---------------------------------------------------- seções recolhíveis */
+.section__toggle {
+  display: flex; align-items: baseline; gap: 7px;
+  flex: 1; min-width: 0;
+  padding: 0; border: 0; background: none; color: inherit; font: inherit;
+  cursor: pointer; text-align: left;
+}
+.section__toggle:hover h2 { color: var(--text); }
+.section__chev { font-size: 9px; color: var(--muted); line-height: 1; }
+.section__summary {
+  font-size: 10.5px; color: var(--muted);
+  padding: 1px 6px; border: 1px solid var(--line); border-radius: 999px;
+  white-space: nowrap;
+}

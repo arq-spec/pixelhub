@@ -1,4 +1,28 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+
+/**
+ * Estado de recolher/expandir guardado no navegador. É preferência de tela, não
+ * do documento: fica fora do projeto, mas persiste entre recargas para a
+ * escolha não se perder a cada abertura.
+ */
+function usePersistentToggle(key: string, initial: boolean) {
+  const [open, setOpen] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key)
+      return stored === null ? initial : stored === '1'
+    } catch {
+      return initial
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, open ? '1' : '0')
+    } catch {
+      // Sem armazenamento a seção ainda recolhe, só não lembra na próxima vez.
+    }
+  }, [key, open])
+  return [open, setOpen] as const
+}
 
 export function Field({
   label, hint, children, wide,
@@ -66,15 +90,45 @@ export function NumberInput({
 }
 
 export function Section({
-  title, action, children,
-}: { title: string; action?: ReactNode; children: ReactNode }) {
+  title, action, children, collapsible, storageKey, defaultOpen = true, summary,
+}: {
+  title: string
+  action?: ReactNode
+  children: ReactNode
+  /** Permite recolher o corpo da seção pelo próprio cabeçalho. */
+  collapsible?: boolean
+  /** Chave de persistência do estado recolhido. */
+  storageKey?: string
+  defaultOpen?: boolean
+  /** Resumo mostrado ao lado do título quando a seção está recolhida. */
+  summary?: ReactNode
+}) {
+  const [open, setOpen] = usePersistentToggle(
+    storageKey ?? `pixelhub.ui.${title}`,
+    defaultOpen,
+  )
+  const isOpen = collapsible ? open : true
+
   return (
     <section className="section">
       <header className="section__head">
-        <h2>{title}</h2>
+        {collapsible ? (
+          <button
+            type="button"
+            className="section__toggle"
+            aria-expanded={isOpen}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span className="section__chev" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
+            <h2>{title}</h2>
+            {!isOpen && summary ? <span className="section__summary">{summary}</span> : null}
+          </button>
+        ) : (
+          <h2>{title}</h2>
+        )}
         {action}
       </header>
-      <div className="section__body">{children}</div>
+      {isOpen ? <div className="section__body">{children}</div> : null}
     </section>
   )
 }

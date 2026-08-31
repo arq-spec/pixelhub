@@ -41,6 +41,7 @@ export function PanelInspector({
     { area: 0, weight: 0, power: 0, modules: 0 },
   )
 
+  const activeFields = FIELD_ORDER.filter((id) => sheet.fields[id] !== false).length
   const allOpen = project.panels.every((p) => expanded[p.id])
   const toggleAll = () =>
     setExpanded(
@@ -111,7 +112,12 @@ export function PanelInspector({
         ) : null}
       </Section>
 
-      <Section title="Informações na folha">
+      <Section
+        title="Informações na folha"
+        collapsible
+        storageKey="pixelhub.ui.fields"
+        summary={`${activeFields} de ${FIELD_ORDER.length}`}
+      >
         <p className="hint">
           Cada item ligado vira uma linha do quadro de dados, abaixo de todo desenho da folha.
         </p>
