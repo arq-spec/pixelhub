@@ -29,7 +29,11 @@ jobs:
       - run: npm ci
 
       # Roda a checagem de tipos junto do build: publicação quebrada não sobe.
+      # BASE_PATH torna os caminhos absolutos, para a página carregar tanto em
+      # /<repo>/ quanto em /<repo> (sem barra final).
       - run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
 
       - uses: actions/configure-pages@v5
         with:

@@ -76,9 +76,15 @@ A primeira execução tenta habilitar o Pages sozinha. Se o workflow parar com u
 erro de permissão, abra *Settings → Pages* e defina **Source: GitHub Actions** —
 depois é só reexecutar o workflow em *Actions*.
 
-O build usa caminhos relativos (`base: './'`), então a aplicação funciona no
-subdiretório do Pages sem ajuste. Servida de lá, ela roda inteiramente no
-navegador e **todos os formatos baixam normalmente**, DXF e `.zip` inclusive.
+A publicação passa `BASE_PATH=/<repo>/`, e o build gera caminhos absolutos com
+esse prefixo. Isso faz a página carregar tanto em `/pixelhub/` quanto em
+`/pixelhub` — com caminho relativo, a URL sem barra final resolveria os assets
+contra a raiz do domínio, dando 404 e **página em branco sem nenhum erro de
+JS**. Fora da publicação o `base` continua relativo, então `dist/` também abre
+direto do disco.
+
+Servida do Pages, a aplicação roda inteiramente no navegador e **todos os
+formatos baixam normalmente**, DXF e `.zip` inclusive.
 
 ## Rodando
 
