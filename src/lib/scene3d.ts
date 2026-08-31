@@ -56,6 +56,8 @@ export interface Face {
   width: number
   /** Faces sem preenchimento não escondem o que está atrás. */
   wire?: boolean
+  /** Peça a que a face pertence, para seleção e arrasto na vista. */
+  itemId?: string
 }
 
 /** Caixa alinhada aos eixos, a partir do canto de menor coordenada. */
@@ -111,6 +113,7 @@ export interface ProjectedFace {
   width: number
   depth: number
   wire?: boolean
+  itemId?: string
 }
 
 /**
@@ -129,6 +132,7 @@ export function projectFaces(faces: Face[], cam: Camera): ProjectedFace[] {
         stroke: f.stroke,
         width: f.width,
         wire: f.wire,
+        itemId: f.itemId,
         depth: depth / f.pts.length,
       }
     })
@@ -148,3 +152,36 @@ export function faceBounds(faces: ProjectedFace[]): Bounds {
   if (!Number.isFinite(x0)) return { x0: 0, y0: 0, x1: 1, y1: 1 }
   return { x0, y0, x1, y1 }
 }
+
+/** Como o arrasto na tela se traduz em deslocamento na cena. */
+export type DragAxis = 'ground' | 'height'
+
+/**
+ * Converte um deslocamento no plano do desenho de volta para a cena.
+ *
+ * No piso, o eixo horizontal da tela dá a direção da câmera e o vertical dá a
+ * profundidade — mas só quando a vista está inclinada: numa vista frontal a
+ * tela não carrega informação de profundidade, e o deslocamento fica só em X.
+ */
+export function dragToScene(
+  dx: number, dy: number, cam: Camera, axis: DragAxis,
+): Vec3 {
+  const a = rad(cam.az)
+  const e = rad(cam.el)
+
+  if (axis === 'height') {
+    const ce = Math.cos(e)
+    return { x: 0, y: Math.abs(ce) < 1e-3 ? 0 : -dy / ce, z: 0 }
+  }
+
+  const se = Math.sin(e)
+  const dpz = Math.abs(se) < 0.15 ? 0 : dy / se
+  return {
+    x: dx * Math.cos(a) + dpz * Math.sin(a),
+    y: 0,
+    z: -dx * Math.sin(a) + dpz * Math.cos(a),
+  }
+}
+
+/** A vista inclina o bastante para o arrasto resolver a profundidade? */
+export const resolvesDepth = (cam: Camera) => Math.abs(Math.sin(rad(cam.el))) >= 0.15

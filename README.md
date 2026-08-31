@@ -81,8 +81,15 @@ processador enxerga o painel.
   pórtico incluso), praticável de palco com altura de perna regulável, mão
   francesa e volumes genéricos. Cada peça tem posição em X, Y e Z, e pode ser
   repetida com passo — três praticáveis em fila são uma peça só.
-  A vista gira com o mouse e sai na folha em **isométrica, frontal, lateral ou
-  superior**, ao lado dos painéis, com a envoltória da montagem no quadro.
+  As peças se posicionam **arrastando na própria vista**: arrastar uma peça a
+  move no piso, com *Shift* move na altura, e arrastar o fundo gira a câmera.
+  As posições encaixam de 5 em 5 cm e os campos numéricos acompanham. A vista
+  sai na folha em **isométrica, frontal, lateral ou superior**, ao lado dos
+  painéis, com a envoltória da montagem no quadro.
+
+  Numa vista frontal a tela não carrega profundidade, então lá o arrasto no
+  piso só resolve a largura — a dica na interface avisa, para não parecer que
+  a peça travou.
 
   Não há renderizador 3D: a cena é projetada ortogonalmente para as mesmas
   primitivas vetoriais da folha, com as faces ordenadas do fundo para a frente.

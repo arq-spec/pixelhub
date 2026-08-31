@@ -491,3 +491,13 @@ body {
 }
 
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+.rig3d__face { cursor: grab; }
+.rig3d__face:active { cursor: grabbing; }
+.rig3d__sel {
+  position: absolute; left: 7px; bottom: 6px;
+  font-size: 10px; color: var(--text); font-variant-numeric: tabular-nums;
+  background: rgba(15, 20, 28, .85); padding: 2px 7px; border-radius: 4px;
+  border: 1px solid var(--accent);
+}
+.rigitem.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }

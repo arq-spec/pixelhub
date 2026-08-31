@@ -88,31 +88,32 @@ export function rigFaces(project: Project, rig: Rig): Face[] {
     const times = Math.max(1, Math.round(item.count))
     for (let i = 0; i < times; i++) {
       const at: RigItem = { ...item, x: item.x + i * item.stepMm }
+      let made: Face[]
       switch (item.kind) {
         case 'painel':
-          faces.push(...panelFaces(at, at.panelId ? panelById.get(at.panelId) ?? null : null))
+          made = panelFaces(at, at.panelId ? panelById.get(at.panelId) ?? null : null)
           break
         case 'praticavel':
-          faces.push(...deckFaces(at))
+          made = deckFaces(at)
           break
         case 'maoFrancesa':
-          faces.push(
-            ...wedge(at.x, at.y, at.z, at.wMm, at.hMm, at.dMm, {
-              fill: at.color ? tint(at.color, 0.72) : SHADE.brace,
-              stroke,
-              width: 0.25,
-            }),
-          )
+          made = wedge(at.x, at.y, at.z, at.wMm, at.hMm, at.dMm, {
+            fill: at.color ? tint(at.color, 0.72) : SHADE.brace,
+            stroke,
+            width: 0.25,
+          })
           break
         default:
-          faces.push(
-            ...box(at.x, at.y, at.z, at.wMm, at.hMm, at.dMm, {
-              fill: at.color ? tint(at.color, 0.72) : SHADE.volume,
-              stroke,
-              width: 0.25,
-            }),
-          )
+          made = box(at.x, at.y, at.z, at.wMm, at.hMm, at.dMm, {
+            fill: at.color ? tint(at.color, 0.72) : SHADE.volume,
+            stroke,
+            width: 0.25,
+          })
       }
+      // Todas as repetições respondem pela mesma peça: arrastar qualquer uma
+      // move o conjunto.
+      for (const f of made) f.itemId = item.id
+      faces.push(...made)
     }
   }
 
