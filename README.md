@@ -45,7 +45,10 @@ processador enxerga o painel.
   cerca de dois terços da célula, a mesma proporção do pixelmap de referência,
   e imprime `ESCALA: 1:xx`.
 - **Informações da folha** — cada linha do quadro de dados (dimensão, pixels,
-  módulos, área, peso, consumo, escala) liga e desliga individualmente.
+  módulos, área, peso, consumo, escala) liga e desliga individualmente. Vêm
+  ligadas por padrão dimensão, pixels, peso e consumo; as demais ficam à mão
+  para quando a folha pedir. O quadro sai logo abaixo do desenho, separado só
+  pela linha tracejada.
 - **Carimbo** — evento, título da folha, desenhista, data do evento, emissão e
   número da folha. **Data do evento em branco imprime `A DEFINIR`.**
 - **Legendas** — bloco de observações livre, uma por linha, com quebra

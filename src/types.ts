@@ -63,14 +63,15 @@ export const FIELD_LABELS: Record<FieldId, string> = {
 
 export type FieldVisibility = Record<FieldId, boolean>
 
+/** Ligadas por padrão: o essencial de montagem e de carga. */
 export const DEFAULT_FIELDS: FieldVisibility = {
   dimensao: true,
   pixels: true,
-  modulos: true,
-  area: true,
+  modulos: false,
+  area: false,
   peso: true,
   consumo: true,
-  escala: true,
+  escala: false,
 }
 
 export interface Sheet {

@@ -86,12 +86,13 @@ export const DRAWING = {
   titleTracking: 0.5,
   /** Folga entre a base do título e o topo do desenho. */
   titleGap: 14.8,
-  specsLineHeight: 7.7,
-  specsSize: 3.5,
+  /** Entrelinha do quadro, proporcional ao corpo do texto. */
+  specsLineHeight: 10.8,
+  specsSize: 4.9,
   /** Folga entre o separador tracejado e a primeira linha de dados. */
   specsGap: 8.5,
   /** Folga entre a base do desenho e o separador tracejado. */
-  drawingGap: 14,
+  drawingGap: 6,
   /**
    * Fração da área da célula que o desenho ocupa. Preencher a célula inteira
    * deixa a representação pesada demais para a folha; 0,72 reproduz a

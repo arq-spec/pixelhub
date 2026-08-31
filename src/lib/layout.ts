@@ -165,35 +165,27 @@ function drawPanelCell(
   // continuar legível sem mudar de linguagem visual.
   const k = Math.min(cw / FULL_CELL.w, ch / FULL_CELL.h)
   const titleSize = clamp(DRAWING.titleSize * k, 3.0, DRAWING.titleSize)
-  const specsSize = clamp(DRAWING.specsSize * k, 2.1, DRAWING.specsSize)
+  const specsSize = clamp(DRAWING.specsSize * k, 2.9, DRAWING.specsSize)
   const lineH = specsSize * (DRAWING.specsLineHeight / DRAWING.specsSize)
   const titleGap = DRAWING.titleGap * clamp(k, 0.55, 1)
   const drawGap = DRAWING.drawingGap * clamp(k, 0.5, 1)
   const specsGap = DRAWING.specsGap * clamp(k, 0.55, 1)
 
-  activeLayer = LAYERS.text
   const title = panel.name.trim().toUpperCase()
-  const titleBaseline = cell.y0 + titleSize
-  if (title) {
-    prims.push(
-      text(cx, titleBaseline, title, fitSize(title, cw, titleSize, true), COLORS.navy, {
-        bold: true, anchor: 'middle', tracking: DRAWING.titleTracking * k,
-      }),
-    )
-  }
 
   // A escala precisa das linhas do quadro, que por sua vez mostram a escala:
   // resolve-se com uma primeira passada só para medir a altura do quadro.
   const probe = specLines(sheet, panel, m, 1)
-  const specsLast = cell.y1
-  const specsFirst = specsLast - Math.max(0, probe.length - 1) * lineH
-  const separatorY = specsFirst - specsGap
-  const band = { top: titleBaseline + titleGap, bottom: separatorY - drawGap }
+  const specsH = Math.max(0, probe.length - 1) * lineH
 
   const dimPad = sheet.showDimensions ? 12 * clamp(k, 0.6, 1) : 0
-  const reserve = sheet.showDimensions ? 15 * clamp(k, 0.6, 1) : 0
+  // Espaço da linha de cota horizontal, entre o desenho e o separador.
+  const dimSpace = sheet.showDimensions ? 10 * clamp(k, 0.6, 1) : 0
+
+  const headH = title ? titleSize + titleGap : 0
+  const tailH = dimSpace + drawGap + specsGap + specsH
   const availW = cw - dimPad * 2
-  const availH = band.bottom - band.top - reserve
+  const availH = ch - headH - tailH
 
   const den = pickScale(
     m.widthMm, m.heightMm,
@@ -201,8 +193,25 @@ function drawPanelCell(
   )
   const w = m.widthMm / den
   const h = m.heightMm / den
+
+  // Título, desenho, separador e quadro formam um bloco contínuo, centralizado
+  // como uma peça só na célula: o quadro acompanha a base do desenho e o
+  // título fica preso ao painel a que se refere.
+  const groupH = headH + h + tailH
+  const groupTop = cell.y0 + Math.max(0, (ch - groupH) / 2)
   const x = cx - w / 2
-  const y = band.top + Math.max(0, (availH - h) / 2)
+  const y = groupTop + headH
+  const separatorY = y + h + dimSpace + drawGap
+  const specsFirst = separatorY + specsGap
+
+  activeLayer = LAYERS.text
+  if (title) {
+    prims.push(
+      text(cx, groupTop + titleSize, title, fitSize(title, cw, titleSize, true), COLORS.navy, {
+        bold: true, anchor: 'middle', tracking: DRAWING.titleTracking * k,
+      }),
+    )
+  }
 
   const colEdges = moduleEdges(m.cols).map((e) => x + e / den)
   const rowEdges = moduleEdges(m.rows).map((e) => y + e / den)
