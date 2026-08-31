@@ -31,16 +31,27 @@ processador enxerga o painel.
 
 - **Painel** — largura e altura em metros, pitch P1.9 ou P2.9, tamanho de
   módulo configurável (predefinições 500×500, 500×1000, 480×485, 600×337,5).
-- **Módulo parcial** — quando o painel não fecha em gabinetes inteiros, o
-  recorte aparece tracejado no desenho e um atalho sugere o tamanho que fecha.
-- **Escala** — automática (escolhe a escala normalizada que melhor preenche a
-  prancha) ou fixada à mão; sai impressa como `ESC. 1:xx`.
+- **Vários painéis por folha** — uma folha comporta quantos painéis forem
+  precisos, cada um com seu desenho, título e quadro de dados. Até três ficam
+  lado a lado; acima disso a prancha ganha uma segunda fila, e a tipografia
+  acompanha o tamanho da célula.
+- **Placas de preenchimento** — quando a altura sobra exatamente meia placa
+  (um painel de 2,50 m com gabinete 500×1000), a sobra é completada com placas
+  quadradas de 500×500 **na fileira superior**, desenhadas como peças reais e
+  descritas no quadro: `4x2 de 0,50x1,00m + 4 de 0,50x0,50m`.
+- **Recorte** — quando a sobra não fecha em placa de catálogo, ela aparece
+  tracejada e um atalho sugere o tamanho que fecha.
+- **Escala** — automática: escolhe a escala normalizada que melhor preenche a
+  célula do painel e imprime `ESCALA: 1:xx`.
+- **Informações da folha** — cada linha do quadro de dados (dimensão, pixels,
+  módulos, área, peso, consumo, escala) liga e desliga individualmente.
 - **Carimbo** — evento, título da folha, desenhista, data do evento, emissão e
   número da folha. **Data do evento em branco imprime `A DEFINIR`.**
 - **Legendas** — bloco de observações livre, uma por linha, com quebra
   automática. A linha do pitch acompanha o pitch selecionado.
-- **Marca** — envie o logotipo do seu escritório (PNG, JPG ou SVG); ele entra
-  acima do carimbo.
+- **Marca** — o logotipo Aerial já vem embutido acima do carimbo, em tamanho
+  dobrado. Para trocar, envie outro arquivo em *Projeto → Enviar logotipo*
+  (PNG, JPG ou SVG).
 - **Várias folhas** — numeradas em sequência pela ordem da lista, com a opção
   de fixar a numeração de cada folha individualmente (`01`, `05A`, `A1`…).
   Duplicar, reordenar e excluir folhas; o projeto inteiro salva em `.json`.

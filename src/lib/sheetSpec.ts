@@ -39,8 +39,10 @@ export const LEGEND = {
 export const STAMP = {
   ruleY: 220.8,
   ruleWidth: 0.6,
-  logoTop: 228.6,
-  logoBottom: 238.0,
+  // Logotipo a 200% do tamanho original: a caixa passou de 9,4 para 18,8 mm de
+  // altura, mantendo o mesmo centro entre a régua e o carimbo.
+  logoTop: 224.1,
+  logoBottom: 242.9,
   boxTop: 245.7,
   boxBottom: 289.2,
   boxX0: 351.0,
@@ -69,27 +71,35 @@ export const STAMP = {
   hairWidth: 0.25,
 } as const
 
-/** Área útil onde o desenho do painel é composto. */
+/**
+ * Área útil da prancha. Cada painel da folha ocupa uma célula dentro dela; com
+ * um único painel a célula é a área inteira e reproduz o modelo de referência.
+ */
 export const DRAWING = {
   x0: 14,
   x1: DIVIDER.x - 14,
-  titleBaseline: 73.5,
+  y0: 68,
+  y1: 262,
+  /** Folga entre células quando há mais de um painel. */
+  gap: 10,
   titleSize: 5.3,
   titleTracking: 0.5,
-  gridTop: 82,
-  /** Base da última linha do quadro de dados. */
-  specsLastBaseline: 262,
+  /** Folga entre a base do título e o topo do desenho. */
+  titleGap: 14.8,
   specsLineHeight: 7.7,
   specsSize: 3.5,
   /** Folga entre o separador tracejado e a primeira linha de dados. */
   specsGap: 8.5,
-  separatorHalfWidth: 44,
   /** Folga entre a base do desenho e o separador tracejado. */
   drawingGap: 14,
   scaleNoteSize: 2.6,
 } as const
 
-export const DRAWING_CX = (DRAWING.x0 + DRAWING.x1) / 2
+/** Dimensões da célula quando a folha tem um único painel. */
+export const FULL_CELL = {
+  w: DRAWING.x1 - DRAWING.x0,
+  h: DRAWING.y1 - DRAWING.y0,
+} as const
 
 /** Paleta extraída do PDF de referência. */
 export const COLORS = {

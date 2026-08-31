@@ -2,7 +2,7 @@ import {
   COLORS,
   DIVIDER,
   DRAWING,
-  DRAWING_CX,
+  FULL_CELL,
   LEGEND,
   PAGE,
   SCALE_LADDER,
@@ -11,10 +11,10 @@ import {
   SIDEBAR_W,
   STAMP,
 } from './sheetSpec'
-import { computeMetrics, moduleEdges, type Metrics } from './calc'
+import { computeMetrics, moduleEdges, runKinds, type Metrics } from './calc'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
-import type { Project, Sheet } from '../types'
+import type { FieldId, PanelConfig, Project, Sheet } from '../types'
 
 export type Anchor = 'start' | 'middle' | 'end'
 
@@ -53,11 +53,15 @@ export const LAYERS = {
   brand: 'PH-LOGO',
 } as const
 
+export interface Cell { x0: number; y0: number; x1: number; y1: number }
+
 export interface SheetLayout {
   page: { w: number; h: number }
   prims: Prim[]
-  metrics: Metrics
-  scaleDenominator: number
+  /** Métricas de cada painel da folha, na ordem. */
+  metrics: Metrics[]
+  /** Escala escolhida para cada painel. */
+  scales: number[]
 }
 
 /**
@@ -90,20 +94,32 @@ function trim(value: number, decimals: number): string {
   return Number.isInteger(rounded) ? num(rounded, 0) : num(rounded, decimals)
 }
 
-/** Linhas do quadro de dados, como pares rótulo/valor. */
-export function specLines(sheet: Sheet, m: Metrics): Array<[string, string]> {
-  const name = sheet.panel.name.trim() || 'PAINEL'
-  const modules = m.hasPartial
-    ? `${m.cols.total}x${m.rows.total} (${m.moduleCount} un., c/ recorte)`
-    : `${m.cols.total}x${m.rows.total} (${m.moduleCount} un.)`
-  return [
-    [`${name}:`, `${meters(m.widthMm)}x${meters(m.heightMm)}m`],
-    ['PIXELS:', `${m.pixelsW}x${m.pixelsH}p`],
-    ['MÓDULOS:', modules],
-    ['ÁREA TOTAL:', `${num(m.areaM2, 2)} m²`],
-    ['PESO:', `${trim(m.weightKg, 1)}kg`],
-    ['CONSUMO:', `${trim(m.powerKva, 1)}kVa`],
+/** Descreve a composição de placas, separando a fileira de preenchimento. */
+function modulesLabel(m: Metrics): string {
+  if (m.rows.hasFiller) {
+    const plate = `${meters(m.fillerSizeMm)}x${meters(m.fillerSizeMm)}m`
+    const base = `${m.cols.total}x${m.rows.full} de ${meters(m.cols.runs[0].sizeMm)}x${meters(m.rows.runs[1].sizeMm)}m`
+    return `${base} + ${m.fillerCount} de ${plate}`
+  }
+  const suffix = m.hasCut ? ', c/ recorte' : ''
+  return `${m.cols.total}x${m.rows.total} (${m.moduleCount} un.${suffix})`
+}
+
+/** Linhas do quadro de dados, como pares rótulo/valor, já filtradas. */
+export function specLines(
+  sheet: Sheet, panel: PanelConfig, m: Metrics, scaleDen: number,
+): Array<[string, string]> {
+  const name = panel.name.trim() || 'PAINEL'
+  const all: Array<[FieldId, string, string]> = [
+    ['dimensao', `${name}:`, `${meters(m.widthMm)}x${meters(m.heightMm)}m`],
+    ['pixels', 'PIXELS:', `${m.pixelsW}x${m.pixelsH}p`],
+    ['modulos', 'MÓDULOS:', modulesLabel(m)],
+    ['area', 'ÁREA TOTAL:', `${num(m.areaM2, 2)} m²`],
+    ['peso', 'PESO:', `${trim(m.weightKg, 1)}kg`],
+    ['consumo', 'CONSUMO:', `${trim(m.powerKva, 1)}kVa`],
+    ['escala', 'ESCALA:', `1:${num(scaleDen, scaleDen % 1 ? 1 : 0)}`],
   ]
+  return all.filter(([id]) => sheet.fields[id] !== false).map(([, l, v]) => [l, v])
 }
 
 /** Rótulo da folha: numeração manual quando houver, senão a sequência. */
@@ -112,130 +128,168 @@ export function sheetNumber(sheet: Sheet, index: number): string {
   return manual || String(index + 1).padStart(2, '0')
 }
 
-function drawPanel(prims: Prim[], sheet: Sheet, m: Metrics, band: { top: number; bottom: number }) {
-  // Com cotas, a faixa inferior da banda fica reservada para a linha de cota
-  // e a nota de escala, e as laterais abrem espaço para a cota de altura.
-  const pad = sheet.showDimensions ? 13 : 0
-  const reserve = sheet.showDimensions ? 16 : 0
-  const availW = DRAWING.x1 - DRAWING.x0 - pad * 2
+/**
+ * Divide a prancha em células, uma por painel.
+ * Até 3 painéis ficam lado a lado; acima disso a grade ganha uma segunda fila.
+ */
+export function panelCells(count: number): Cell[] {
+  const cols = count <= 3 ? count : count <= 6 ? 3 : 4
+  const rows = Math.ceil(count / cols)
+  const totalW = DRAWING.x1 - DRAWING.x0
+  const totalH = DRAWING.y1 - DRAWING.y0
+  const cw = (totalW - DRAWING.gap * (cols - 1)) / cols
+  const ch = (totalH - DRAWING.gap * (rows - 1)) / rows
+
+  const cells: Cell[] = []
+  for (let i = 0; i < count; i++) {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    const x0 = DRAWING.x0 + c * (cw + DRAWING.gap)
+    const y0 = DRAWING.y0 + r * (ch + DRAWING.gap)
+    cells.push({ x0, y0, x1: x0 + cw, y1: y0 + ch })
+  }
+  return cells
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
+/** Desenha um painel dentro da sua célula e devolve a escala usada. */
+function drawPanelCell(
+  prims: Prim[], sheet: Sheet, panel: PanelConfig, m: Metrics, cell: Cell,
+): number {
+  const cw = cell.x1 - cell.x0
+  const ch = cell.y1 - cell.y0
+  const cx = (cell.x0 + cell.x1) / 2
+
+  // Tipografia proporcional à célula, para a folha com vários painéis
+  // continuar legível sem mudar de linguagem visual.
+  const k = Math.min(cw / FULL_CELL.w, ch / FULL_CELL.h)
+  const titleSize = clamp(DRAWING.titleSize * k, 3.0, DRAWING.titleSize)
+  const specsSize = clamp(DRAWING.specsSize * k, 2.1, DRAWING.specsSize)
+  const lineH = specsSize * (DRAWING.specsLineHeight / DRAWING.specsSize)
+  const titleGap = DRAWING.titleGap * clamp(k, 0.55, 1)
+  const drawGap = DRAWING.drawingGap * clamp(k, 0.5, 1)
+  const specsGap = DRAWING.specsGap * clamp(k, 0.55, 1)
+
+  activeLayer = LAYERS.text
+  const title = panel.name.trim().toUpperCase()
+  const titleBaseline = cell.y0 + titleSize
+  if (title) {
+    prims.push(
+      text(cx, titleBaseline, title, fitSize(title, cw, titleSize, true), COLORS.navy, {
+        bold: true, anchor: 'middle', tracking: DRAWING.titleTracking * k,
+      }),
+    )
+  }
+
+  // A escala precisa das linhas do quadro, que por sua vez mostram a escala:
+  // resolve-se com uma primeira passada só para medir a altura do quadro.
+  const probe = specLines(sheet, panel, m, 1)
+  const specsLast = cell.y1
+  const specsFirst = specsLast - Math.max(0, probe.length - 1) * lineH
+  const separatorY = specsFirst - specsGap
+  const band = { top: titleBaseline + titleGap, bottom: separatorY - drawGap }
+
+  const dimPad = sheet.showDimensions ? 12 * clamp(k, 0.6, 1) : 0
+  const reserve = sheet.showDimensions ? 15 * clamp(k, 0.6, 1) : 0
+  const availW = cw - dimPad * 2
   const availH = band.bottom - band.top - reserve
 
-  const den = sheet.scaleDenominator ?? pickScale(m.widthMm, m.heightMm, availW, availH)
+  const den = pickScale(m.widthMm, m.heightMm, availW, availH)
   const w = m.widthMm / den
   const h = m.heightMm / den
-  const x = DRAWING_CX - w / 2
+  const x = cx - w / 2
   const y = band.top + Math.max(0, (availH - h) / 2)
 
   const colEdges = moduleEdges(m.cols).map((e) => x + e / den)
   const rowEdges = moduleEdges(m.rows).map((e) => y + e / den)
+  const colKinds = runKinds(m.cols)
+  const rowKinds = runKinds(m.rows)
 
-  // Um retângulo por módulo: o parcial (recorte de gabinete) sai tracejado.
+  activeLayer = LAYERS.modules
   for (let r = 0; r < rowEdges.length - 1; r++) {
     for (let c = 0; c < colEdges.length - 1; c++) {
-      const partial =
-        (m.cols.remainderMm > 0 && c === colEdges.length - 2) ||
-        (m.rows.remainderMm > 0 && r === rowEdges.length - 2)
+      // Só o recorte sai tracejado; a placa de preenchimento é uma peça real.
+      const isCut = colKinds[c] === 'cut' || rowKinds[r] === 'cut'
       prims.push({
-        kind: 'rect',
-        layer: LAYERS.modules,
-        x: colEdges[c],
-        y: rowEdges[r],
+        kind: 'rect', layer: LAYERS.modules,
+        x: colEdges[c], y: rowEdges[r],
         w: colEdges[c + 1] - colEdges[c],
         h: rowEdges[r + 1] - rowEdges[r],
         fill: COLORS.moduleFill,
         stroke: COLORS.moduleStroke,
         width: 0.3,
-        dashed: partial,
+        dashed: isCut,
       })
     }
   }
 
-  // Contorno externo mais forte, como no modelo.
   prims.push({
     kind: 'rect', layer: LAYERS.panel, x, y, w, h,
     stroke: COLORS.moduleStroke, width: 0.55,
   })
 
   if (sheet.showDimensions) {
-    const off = 7
-    const tick = 1.6
-    // Cota horizontal, abaixo do desenho.
+    activeLayer = LAYERS.dims
+    const off = 6.5 * clamp(k, 0.6, 1)
+    const tick = 1.5
+    const dimSize = clamp(2.6 * k, 1.9, 2.6)
     const dy = y + h + off
     prims.push(line(x, dy, x + w, dy, COLORS.dim, 0.2))
     prims.push(line(x, dy - tick, x, dy + tick, COLORS.dim, 0.2))
     prims.push(line(x + w, dy - tick, x + w, dy + tick, COLORS.dim, 0.2))
-    prims.push(
-      text(DRAWING_CX, dy - 1.4, `${meters(m.widthMm)}m`, 2.6, COLORS.dim, { anchor: 'middle' }),
-    )
-    // Cota vertical, à esquerda.
+    prims.push(text(cx, dy - 1.3, `${meters(m.widthMm)}m`, dimSize, COLORS.dim, { anchor: 'middle' }))
+
     const dx = x - off
     prims.push(line(dx, y, dx, y + h, COLORS.dim, 0.2))
     prims.push(line(dx - tick, y, dx + tick, y, COLORS.dim, 0.2))
     prims.push(line(dx - tick, y + h, dx + tick, y + h, COLORS.dim, 0.2))
     // O texto assenta na linha de base: o deslocamento centra a cota no vão.
     prims.push(
-      text(dx - 1.4, y + h / 2 + 0.95, `${meters(m.heightMm)}m`, 2.6, COLORS.dim, { anchor: 'end' }),
+      text(dx - 1.3, y + h / 2 + dimSize * 0.36, `${meters(m.heightMm)}m`, dimSize, COLORS.dim, {
+        anchor: 'end',
+      }),
     )
   }
 
-  // Com as cotas ligadas, a linha de cota ocupa a faixa logo abaixo do
-  // desenho; a nota de escala desce para não escrever por cima dela.
-  return { den, gridBottom: y + h, noteOffset: sheet.showDimensions ? 14 : 6.5 }
+  activeLayer = LAYERS.text
+  const specs = specLines(sheet, panel, m, den)
+  if (specs.length) {
+    const gap = specsSize * 0.28
+    const widths = specs.map(
+      ([l, v]) => textWidth(l, specsSize, true) + gap + textWidth(v, specsSize, false),
+    )
+    // O separador acompanha a linha mais larga do quadro, com uma folga.
+    const halfWidth = Math.min(Math.max(...widths) / 2 + 4, cw / 2)
+    prims.push(
+      line(cx - halfWidth, separatorY, cx + halfWidth, separatorY, COLORS.dash, 0.3, true),
+    )
+    specs.forEach(([label, value], i) => {
+      const ly = specsFirst + i * lineH
+      const startX = cx - widths[i] / 2
+      prims.push(text(startX, ly, label, specsSize, COLORS.navy, { bold: true }))
+      prims.push(
+        text(startX + textWidth(label, specsSize, true) + gap, ly, value, specsSize, COLORS.slateText),
+      )
+    })
+  }
+
+  return den
 }
 
 export function buildSheetLayout(project: Project, sheet: Sheet, index: number): SheetLayout {
-  const m = computeMetrics(sheet.panel)
   const prims: Prim[] = []
+  const panels = sheet.panels.length ? sheet.panels : []
+  const metrics = panels.map(computeMetrics)
 
   activeLayer = LAYERS.frame
   prims.push({ kind: 'rect', layer: LAYERS.frame, x: 0, y: 0, w: PAGE.w, h: PAGE.h, fill: '#ffffff' })
 
   // ---------------------------------------------------------------- prancha
-  activeLayer = LAYERS.text
-  const title = sheet.panel.name.trim().toUpperCase()
-  if (title) {
-    const size = fitSize(title, DRAWING.x1 - DRAWING.x0, DRAWING.titleSize, true)
-    prims.push(
-      text(DRAWING_CX, DRAWING.titleBaseline, title, size, COLORS.navy, {
-        bold: true, anchor: 'middle', tracking: DRAWING.titleTracking,
-      }),
-    )
-  }
-
-  const specs = specLines(sheet, m)
-  const specsFirstBaseline =
-    DRAWING.specsLastBaseline - (specs.length - 1) * DRAWING.specsLineHeight
-  const separatorY = specsFirstBaseline - DRAWING.specsGap
-  const band = { top: DRAWING.gridTop, bottom: separatorY - DRAWING.drawingGap }
-
-  activeLayer = LAYERS.dims
-  const { den, gridBottom, noteOffset } = drawPanel(prims, sheet, m, band)
-  activeLayer = LAYERS.text
-
-  prims.push(
-    text(DRAWING_CX, gridBottom + noteOffset, `ESC. 1:${num(den, den % 1 ? 1 : 0)}`, DRAWING.scaleNoteSize, COLORS.slate, {
-      anchor: 'middle', tracking: 0.15,
-    }),
+  const cells = panelCells(panels.length)
+  const scales = panels.map((panel, i) =>
+    drawPanelCell(prims, sheet, panel, metrics[i], cells[i]),
   )
-
-  prims.push(
-    line(
-      DRAWING_CX - DRAWING.separatorHalfWidth, separatorY,
-      DRAWING_CX + DRAWING.separatorHalfWidth, separatorY,
-      COLORS.dash, 0.3, true,
-    ),
-  )
-
-  // Cada linha do quadro é centralizada como um bloco rótulo+valor.
-  specs.forEach(([label, value], i) => {
-    const y = specsFirstBaseline + i * DRAWING.specsLineHeight
-    const gap = DRAWING.specsSize * 0.28
-    const lw = textWidth(label, DRAWING.specsSize, true)
-    const vw = textWidth(value, DRAWING.specsSize, false)
-    const startX = DRAWING_CX - (lw + gap + vw) / 2
-    prims.push(text(startX, y, label, DRAWING.specsSize, COLORS.navy, { bold: true }))
-    prims.push(text(startX + lw + gap, y, value, DRAWING.specsSize, COLORS.slateText))
-  })
 
   // ---------------------------------------------------------------- lateral
   activeLayer = LAYERS.frame
@@ -261,7 +315,6 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
       }),
     )
     const innerW = SIDEBAR_W - LEGEND.boxPadX * 2
-    // Observação longa quebra em várias linhas dentro da própria caixa.
     const rendered = notes.flatMap((n) => wrapText(n.trim(), innerW, LEGEND.itemSize))
     const boxH =
       LEGEND.firstBaseline + (rendered.length - 1) * LEGEND.lineHeight + LEGEND.bottomPad
@@ -297,9 +350,8 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
     })
   } else if (project.brand.name.trim()) {
     const brand = project.brand.name.trim()
-    const size = fitSize(brand, SIDEBAR_W, 6.4, true)
     prims.push(
-      text(SIDEBAR_CX, STAMP.logoBottom - 1.2, brand, size, COLORS.accent, {
+      text(SIDEBAR_CX, STAMP.logoBottom - 3, brand, fitSize(brand, SIDEBAR_W, 9, true), COLORS.accent, {
         bold: true, anchor: 'middle',
       }),
     )
@@ -317,9 +369,8 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
   const contentW = STAMP.colREnd - STAMP.colL
   const eventName = project.eventName.trim().toUpperCase()
   if (eventName) {
-    const size = fitSize(eventName, contentW, STAMP.eventSize, true)
     prims.push(
-      text(STAMP.colL, STAMP.eventBaseline, eventName, size, COLORS.navyDeep, {
+      text(STAMP.colL, STAMP.eventBaseline, eventName, fitSize(eventName, contentW, STAMP.eventSize, true), COLORS.navyDeep, {
         bold: true, tracking: 0.12,
       }),
     )
@@ -368,5 +419,5 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
     'FOLHA', sheetNumber(sheet, index), colW,
   )
 
-  return { page: { w: PAGE.w, h: PAGE.h }, prims, metrics: m, scaleDenominator: den }
+  return { page: { w: PAGE.w, h: PAGE.h }, prims, metrics, scales }
 }

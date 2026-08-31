@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useReducer } from 'react'
-import { DEFAULT_MODULE_MM, PITCHES, type PanelConfig, type Project, type Sheet } from '../types'
+import {
+  DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES,
+  type FieldId, type PanelConfig, type Project, type Sheet,
+} from '../types'
 import { todayIso } from './format'
+import { DEFAULT_LOGO_DATA_URI } from './brandLogo'
+
+const STORAGE_KEY = 'pixelhub.project.v2'
+
+export const DEFAULT_NOTES = ['Painel de LED - P2.9mm', 'Arquivos Vídeo .Mov - DXV3.']
 
 /** Reconhece a linha de observação que anuncia o pitch do painel. */
 const PITCH_NOTE = /^\s*painel de led\s*-\s*p[\d.,]+\s*mm\s*$/i
@@ -23,40 +31,42 @@ export function syncPitchNote(notes: string[], label: string, addIfMissing = fal
   return [...next.filter((n) => n.trim()), pitchNote(label)]
 }
 
-const STORAGE_KEY = 'pixelhub.project.v1'
-
-export const DEFAULT_NOTES = ['Painel de LED - P2.9mm', 'Arquivos Vídeo .Mov - DXV3.']
-
 let seq = 0
 const uid = () => `s${Date.now().toString(36)}${(seq++).toString(36)}`
 
-export function makeSheet(partial?: Partial<Sheet>): Sheet {
-  const panel: PanelConfig = {
+export function makePanel(partial?: Partial<PanelConfig>): PanelConfig {
+  return {
     name: 'PAINEL PRINCIPAL',
     widthMm: 4000,
     heightMm: 2500,
     pitch: 'P2.9',
     moduleWMm: DEFAULT_MODULE_MM.w,
     moduleHMm: DEFAULT_MODULE_MM.h,
-    ...partial?.panel,
+    ...partial,
   }
+}
+
+export function makeSheet(partial?: Partial<Sheet>): Sheet {
+  const panels = partial?.panels?.length
+    ? partial.panels.map((p) => makePanel(p))
+    : [makePanel()]
   return {
     id: uid(),
     title: 'PIXELMAP',
     notes: [...DEFAULT_NOTES],
     numberOverride: null,
-    scaleDenominator: null,
     showDimensions: false,
     ...partial,
-    panel,
+    panels,
+    fields: { ...DEFAULT_FIELDS, ...(partial?.fields ?? {}) },
   }
 }
 
 export function makeProject(): Project {
   return {
-    brand: { name: '', logoDataUri: null },
+    brand: { name: '', logoDataUri: DEFAULT_LOGO_DATA_URI },
     eventName: 'NOME DO EVENTO',
-    desenhista: '',
+    desenhista: 'GABRIEL',
     eventDate: '',
     issueDate: todayIso(),
     sheets: [makeSheet()],
@@ -72,13 +82,23 @@ export type Action =
   | { type: 'duplicateSheet'; index: number }
   | { type: 'removeSheet'; index: number }
   | { type: 'moveSheet'; index: number; delta: number }
-  | { type: 'patchSheet'; index: number; patch: Partial<Omit<Sheet, 'panel'>> }
-  | { type: 'patchPanel'; index: number; patch: Partial<PanelConfig> }
+  | { type: 'patchSheet'; index: number; patch: Partial<Omit<Sheet, 'panels'>> }
+  | { type: 'toggleField'; index: number; field: FieldId; value: boolean }
+  | { type: 'addPanel'; index: number }
+  | { type: 'duplicatePanel'; index: number; panelIndex: number }
+  | { type: 'removePanel'; index: number; panelIndex: number }
+  | { type: 'movePanel'; index: number; panelIndex: number; delta: number }
+  | { type: 'patchPanel'; index: number; panelIndex: number; patch: Partial<PanelConfig> }
   | { type: 'clearOverrides' }
   | { type: 'load'; project: Project }
   | { type: 'reset' }
 
 const clampIndex = (i: number, len: number) => Math.max(0, Math.min(i, len - 1))
+
+/** Aplica uma transformação à folha em `index`, mantendo o resto intacto. */
+function mapSheet(state: Project, index: number, fn: (s: Sheet) => Sheet): Project {
+  return { ...state, sheets: state.sheets.map((s, i) => (i === index ? fn(s) : s)) }
+}
 
 export function reducer(state: Project, action: Action): Project {
   switch (action.type) {
@@ -93,16 +113,16 @@ export function reducer(state: Project, action: Action): Project {
 
     case 'addSheet': {
       const source = state.sheets[state.activeIndex]
-      // Uma folha nova herda o painel da folha atual: na prática as folhas de
+      // Uma folha nova herda a configuração da atual: na prática as folhas de
       // um mesmo projeto são variações, não configurações do zero.
       const sheet = makeSheet(
         source
           ? {
               title: source.title,
               notes: [...source.notes],
-              panel: { ...source.panel },
-              scaleDenominator: source.scaleDenominator,
+              panels: source.panels.map((p) => ({ ...p })),
               showDimensions: source.showDimensions,
+              fields: { ...source.fields },
             }
           : undefined,
       )
@@ -116,9 +136,9 @@ export function reducer(state: Project, action: Action): Project {
       const copy = makeSheet({
         title: source.title,
         notes: [...source.notes],
-        panel: { ...source.panel },
-        scaleDenominator: source.scaleDenominator,
+        panels: source.panels.map((p) => ({ ...p })),
         showDimensions: source.showDimensions,
+        fields: { ...source.fields },
       })
       const sheets = [...state.sheets]
       sheets.splice(action.index + 1, 0, copy)
@@ -140,24 +160,67 @@ export function reducer(state: Project, action: Action): Project {
       return { ...state, sheets, activeIndex: to }
     }
 
-    case 'patchSheet': {
-      const sheets = state.sheets.map((s, i) => (i === action.index ? { ...s, ...action.patch } : s))
-      return { ...state, sheets }
-    }
+    case 'patchSheet':
+      return mapSheet(state, action.index, (s) => ({ ...s, ...action.patch }))
 
-    case 'patchPanel': {
-      const sheets = state.sheets.map((s, i) => {
-        if (i !== action.index) return s
-        const panel = { ...s.panel, ...action.patch }
+    case 'toggleField':
+      return mapSheet(state, action.index, (s) => ({
+        ...s,
+        fields: { ...s.fields, [action.field]: action.value },
+      }))
+
+    case 'addPanel':
+      return mapSheet(state, action.index, (s) => {
+        const last = s.panels[s.panels.length - 1]
+        return {
+          ...s,
+          panels: [
+            ...s.panels,
+            makePanel({ ...last, name: `PAINEL ${s.panels.length + 1}` }),
+          ],
+        }
+      })
+
+    case 'duplicatePanel':
+      return mapSheet(state, action.index, (s) => {
+        const source = s.panels[action.panelIndex]
+        if (!source) return s
+        const panels = [...s.panels]
+        panels.splice(action.panelIndex + 1, 0, { ...source })
+        return { ...s, panels }
+      })
+
+    case 'removePanel':
+      return mapSheet(state, action.index, (s) =>
+        s.panels.length <= 1
+          ? s
+          : { ...s, panels: s.panels.filter((_, i) => i !== action.panelIndex) },
+      )
+
+    case 'movePanel':
+      return mapSheet(state, action.index, (s) => {
+        const to = action.panelIndex + action.delta
+        if (to < 0 || to >= s.panels.length) return s
+        const panels = [...s.panels]
+        const [moved] = panels.splice(action.panelIndex, 1)
+        panels.splice(to, 0, moved)
+        return { ...s, panels }
+      })
+
+    case 'patchPanel':
+      return mapSheet(state, action.index, (s) => {
+        const current = s.panels[action.panelIndex]
+        if (!current) return s
+        const panels = s.panels.map((p, i) =>
+          i === action.panelIndex ? { ...p, ...action.patch } : p,
+        )
         // Trocar o pitch reescreve a observação correspondente, se houver.
         const notes =
-          action.patch.pitch && action.patch.pitch !== s.panel.pitch
+          action.patch.pitch && action.patch.pitch !== current.pitch
             ? syncPitchNote(s.notes, PITCHES[action.patch.pitch].label)
             : s.notes
-        return { ...s, panel, notes }
+        return { ...s, panels, notes }
       })
-      return { ...state, sheets }
-    }
 
     case 'clearOverrides':
       return { ...state, sheets: state.sheets.map((s) => ({ ...s, numberOverride: null })) }
@@ -176,10 +239,15 @@ export function reducer(state: Project, action: Action): Project {
 /** Reidrata o projeto salvo tolerando arquivos antigos ou incompletos. */
 export function hydrate(raw: unknown): Project | null {
   if (!raw || typeof raw !== 'object') return null
-  const data = raw as Partial<Project>
+  // `panel` (singular) é o formato anterior à folha com vários painéis.
+  type StoredSheet = Partial<Sheet> & { panel?: PanelConfig }
+  const data = raw as Omit<Partial<Project>, 'sheets'> & { sheets?: StoredSheet[] }
   if (!Array.isArray(data.sheets) || data.sheets.length === 0) return null
   const base = makeProject()
-  const sheets = data.sheets.map((s) => makeSheet(s as Partial<Sheet>))
+  const sheets = data.sheets.map((s) =>
+    // Projetos salvos antes da folha com vários painéis traziam `panel`.
+    makeSheet({ ...s, panels: s.panels ?? (s.panel ? [s.panel] : undefined) }),
+  )
   return {
     ...base,
     ...data,

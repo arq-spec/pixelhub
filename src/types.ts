@@ -37,11 +37,48 @@ export interface PanelConfig {
   moduleHMm: number
 }
 
+/** Linhas do quadro de dados que podem ser ligadas ou desligadas na folha. */
+export type FieldId =
+  | 'dimensao'
+  | 'pixels'
+  | 'modulos'
+  | 'area'
+  | 'peso'
+  | 'consumo'
+  | 'escala'
+
+export const FIELD_ORDER: FieldId[] = [
+  'dimensao', 'pixels', 'modulos', 'area', 'peso', 'consumo', 'escala',
+]
+
+export const FIELD_LABELS: Record<FieldId, string> = {
+  dimensao: 'Dimensão do painel',
+  pixels: 'Pixels',
+  modulos: 'Módulos',
+  area: 'Área total',
+  peso: 'Peso',
+  consumo: 'Consumo',
+  escala: 'Escala (ESC. 1:x)',
+}
+
+export type FieldVisibility = Record<FieldId, boolean>
+
+export const DEFAULT_FIELDS: FieldVisibility = {
+  dimensao: true,
+  pixels: true,
+  modulos: true,
+  area: true,
+  peso: true,
+  consumo: true,
+  escala: true,
+}
+
 export interface Sheet {
   id: string
   /** Título impresso no carimbo, ex.: "PIXELMAP". */
   title: string
-  panel: PanelConfig
+  /** Painéis desenhados nesta folha. A folha comporta mais de um. */
+  panels: PanelConfig[]
   /** Linhas do quadro OBSERVAÇÕES. */
   notes: string[]
   /**
@@ -49,10 +86,10 @@ export interface Sheet {
    * Uma string força a numeração daquela folha ("03", "A1", "05A"...).
    */
   numberOverride: string | null
-  /** Denominador da escala (1:x). `null` = ajusta automaticamente à prancha. */
-  scaleDenominator: number | null
-  /** Cotas de largura e altura ao redor do desenho. */
+  /** Cotas de largura e altura ao redor de cada desenho. */
   showDimensions: boolean
+  /** Quais linhas do quadro de dados aparecem na folha. */
+  fields: FieldVisibility
 }
 
 export interface Brand {

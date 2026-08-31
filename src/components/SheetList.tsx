@@ -37,9 +37,9 @@ export function SheetList({
                 <span className="sheets__meta">
                   <strong>{sheet.title || 'SEM TÍTULO'}</strong>
                   <small>
-                    {sheet.panel.name} · {meters(sheet.panel.widthMm)}×{meters(sheet.panel.heightMm)}m
-                    {' · '}
-                    {sheet.panel.pitch}
+                    {sheet.panels.length > 1
+                      ? `${sheet.panels.length} painéis · ${sheet.panels[0].pitch}`
+                      : `${sheet.panels[0].name} · ${meters(sheet.panels[0].widthMm)}×${meters(sheet.panels[0].heightMm)}m · ${sheet.panels[0].pitch}`}
                   </small>
                 </span>
               </button>
