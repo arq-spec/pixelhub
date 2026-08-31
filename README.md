@@ -72,9 +72,13 @@ constrói o projeto e publica no GitHub Pages, em
 
 **https://arq-spec.github.io/pixelhub/**
 
-A primeira execução tenta habilitar o Pages sozinha. Se o workflow parar com um
-erro de permissão, abra *Settings → Pages* e defina **Source: GitHub Actions** —
-depois é só reexecutar o workflow em *Actions*.
+**Confira *Settings → Pages* → `Source: GitHub Actions`.** O `configure-pages`
+habilita o Pages quando ele ainda não existe, mas **não converte** um Pages já
+configurado como *Deploy from a branch*. Nesse modo o site serve a raiz do
+repositório em vez do build — e a raiz tem o `index.html` de origem do Vite,
+com uma `<div id="root">` vazia e um `<script src="/src/main.tsx">` que não
+existe no site publicado. O resultado é uma **página em branco, sem nenhum erro
+no console**: o workflow aparece verde e mesmo assim nada carrega.
 
 A publicação passa `BASE_PATH=/<repo>/`, e o build gera caminhos absolutos com
 esse prefixo. Isso faz a página carregar tanto em `/pixelhub/` quanto em
