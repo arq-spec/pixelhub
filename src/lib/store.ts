@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useReducer } from 'react'
 import {
   DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES,
-  type FieldId, type PanelConfig, type Project, type RegionStyle, type Sheet,
+  type FieldId, type PanelConfig, type Project, type RegionStyle, type Rig,
+  type RigItem, type RigKind, type Sheet,
 } from '../types'
 import { todayIso } from './format'
 import { DEFAULT_LOGO_DATA_URI } from './brandLogo'
@@ -52,6 +53,37 @@ export function makePanel(partial?: Partial<PanelConfig>): PanelConfig {
   }
 }
 
+/** Peça nova, com medidas usuais do que o mercado aluga. */
+export function makeRigItem(kind: RigKind, partial?: Partial<RigItem>): RigItem {
+  const base: RigItem = {
+    id: uid('i'), kind, name: '',
+    x: 0, y: 0, z: 0,
+    wMm: 1000, hMm: 1000, dMm: 1000,
+    panelId: null, legMm: 600, count: 1, stepMm: 2000,
+    color: null,
+  }
+  const presets: Record<RigKind, Partial<RigItem>> = {
+    painel: { name: 'PAINEL', dMm: 100 },
+    // Praticável de palco: tampo de 2,00 x 1,00 m com pernas reguláveis.
+    praticavel: { name: 'PRATICÁVEL', wMm: 2000, hMm: 200, dMm: 1000, legMm: 600, stepMm: 2000 },
+    // Mão francesa: cateto vertical junto ao painel, cateto no chão.
+    maoFrancesa: { name: 'MÃO FRANCESA', wMm: 60, hMm: 2000, dMm: 1200, stepMm: 2000 },
+    volume: { name: 'VOLUME', wMm: 1000, hMm: 1000, dMm: 1000 },
+  }
+  return { ...base, ...presets[kind], ...partial }
+}
+
+export function makeRig(partial?: Partial<Rig>): Rig {
+  return {
+    id: uid('g'),
+    name: 'MONTAGEM',
+    items: [],
+    view: 'isometrica',
+    showGround: true,
+    ...partial,
+  }
+}
+
 export function makeSheet(partial?: Partial<Sheet>): Sheet {
   return {
     id: uid('s'),
@@ -61,6 +93,7 @@ export function makeSheet(partial?: Partial<Sheet>): Sheet {
     showDimensions: false,
     showColorLegend: true,
     activePanelIds: [],
+    activeRigIds: [],
     ...partial,
     fields: { ...DEFAULT_FIELDS, ...(partial?.fields ?? {}) },
   }
@@ -71,6 +104,7 @@ export function makeProject(): Project {
   return {
     brand: { name: '', logoDataUri: DEFAULT_LOGO_DATA_URI },
     panels: [panel],
+    rigs: [],
     eventName: 'NOME DO EVENTO',
     desenhista: 'GABRIEL',
     eventDate: '',
@@ -103,6 +137,14 @@ export type Action =
   | { type: 'patchPanel'; panelId: string; patch: Partial<PanelConfig> }
   /** Liga ou desliga um painel do projeto nesta folha. */
   | { type: 'togglePanel'; index: number; panelId: string; active: boolean }
+  /** Montagens: catálogo do projeto e seleção por folha. */
+  | { type: 'addRig' }
+  | { type: 'removeRig'; rigId: string }
+  | { type: 'patchRig'; rigId: string; patch: Partial<Omit<Rig, 'items'>> }
+  | { type: 'toggleRig'; index: number; rigId: string; active: boolean }
+  | { type: 'addRigItem'; rigId: string; kind: RigKind; panelId?: string }
+  | { type: 'removeRigItem'; rigId: string; itemId: string }
+  | { type: 'patchRigItem'; rigId: string; itemId: string; patch: Partial<RigItem> }
   /** Liga ou desliga placas do painel (formato livre). */
   | { type: 'setCells'; panelId: string; cells: string[]; present: boolean }
   /** Coloca ou tira linhas de corte, que definem as repartições. */
@@ -119,6 +161,11 @@ const clampIndex = (i: number, len: number) => Math.max(0, Math.min(i, len - 1))
 /** Aplica uma transformação ao painel do catálogo, mantendo o resto intacto. */
 function mapPanel(state: Project, panelId: string, fn: (p: PanelConfig) => PanelConfig): Project {
   return { ...state, panels: state.panels.map((p) => (p.id === panelId ? fn(p) : p)) }
+}
+
+/** Aplica uma transformação a uma montagem do catálogo. */
+function mapRig(state: Project, rigId: string, fn: (r: Rig) => Rig): Project {
+  return { ...state, rigs: state.rigs.map((r) => (r.id === rigId ? fn(r) : r)) }
 }
 
 /** Aplica uma transformação à folha em `index`, mantendo o resto intacto. */
@@ -300,6 +347,57 @@ export function reducer(state: Project, action: Action): Project {
           : s.activePanelIds.filter((id) => id !== action.panelId),
       }))
 
+    case 'addRig': {
+      const rig = makeRig({ name: `MONTAGEM ${state.rigs.length + 1}` })
+      const withRig = { ...state, rigs: [...state.rigs, rig] }
+      return mapSheet(withRig, state.activeIndex, (s) => ({
+        ...s,
+        activeRigIds: [...s.activeRigIds, rig.id],
+      }))
+    }
+
+    case 'removeRig':
+      return {
+        ...state,
+        rigs: state.rigs.filter((r) => r.id !== action.rigId),
+        sheets: state.sheets.map((s) => ({
+          ...s,
+          activeRigIds: s.activeRigIds.filter((id) => id !== action.rigId),
+        })),
+      }
+
+    case 'patchRig':
+      return {
+        ...state,
+        rigs: state.rigs.map((r) => (r.id === action.rigId ? { ...r, ...action.patch } : r)),
+      }
+
+    case 'toggleRig':
+      return mapSheet(state, action.index, (s) => ({
+        ...s,
+        activeRigIds: action.active
+          ? [...new Set([...s.activeRigIds, action.rigId])]
+          : s.activeRigIds.filter((id) => id !== action.rigId),
+      }))
+
+    case 'addRigItem':
+      return mapRig(state, action.rigId, (r) => ({
+        ...r,
+        items: [...r.items, makeRigItem(action.kind, { panelId: action.panelId ?? null })],
+      }))
+
+    case 'removeRigItem':
+      return mapRig(state, action.rigId, (r) => ({
+        ...r,
+        items: r.items.filter((i) => i.id !== action.itemId),
+      }))
+
+    case 'patchRigItem':
+      return mapRig(state, action.rigId, (r) => ({
+        ...r,
+        items: r.items.map((i) => (i.id === action.itemId ? { ...i, ...action.patch } : i)),
+      }))
+
     case 'clearOverrides':
       return { ...state, sheets: state.sheets.map((s) => ({ ...s, numberOverride: null })) }
 
@@ -368,13 +466,15 @@ export function hydrate(raw: unknown): Project | null {
   if (!raw || typeof raw !== 'object') return null
   type StoredPanel = StoredPanelShape
   type StoredSheet = Omit<Partial<Sheet>, 'activePanelIds'> & {
+    activeRigIds?: string[]
     panel?: StoredPanel
     panels?: StoredPanel[]
     activePanelIds?: string[]
   }
-  type StoredProject = Omit<Partial<Project>, 'sheets' | 'panels'> & {
+  type StoredProject = Omit<Partial<Project>, 'sheets' | 'panels' | 'rigs'> & {
     sheets?: StoredSheet[]
     panels?: StoredPanel[]
+    rigs?: Array<Partial<Rig> & { items?: Array<Partial<RigItem> & { kind?: RigKind }> }>
   }
   const data = raw as StoredProject
   if (!Array.isArray(data.sheets) || data.sheets.length === 0) return null
@@ -394,10 +494,13 @@ export function hydrate(raw: unknown): Project | null {
     return panel.id
   }
 
+  const rigs = (data.rigs ?? []).map((r) =>
+    makeRig({ ...r, items: (r.items ?? []).map((i) => makeRigItem(i.kind ?? 'volume', i)) }),
+  )
   const sheets = data.sheets.map((s) => {
     const legacy = s.panels ?? (s.panel ? [s.panel] : [])
     const activePanelIds = s.activePanelIds ?? legacy.map(adopt)
-    return makeSheet({ ...s, activePanelIds })
+    return makeSheet({ ...s, activePanelIds, activeRigIds: s.activeRigIds ?? [] })
   })
 
   if (catalog.length === 0) catalog.push(...base.panels)
@@ -406,6 +509,7 @@ export function hydrate(raw: unknown): Project | null {
     ...base,
     ...data,
     panels: catalog,
+    rigs,
     brand: { ...base.brand, ...(data.brand ?? {}) },
     sheets,
     activeIndex: clampIndex(data.activeIndex ?? 0, sheets.length),

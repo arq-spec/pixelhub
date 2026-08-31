@@ -30,6 +30,11 @@ function primToSvg(p: Prim): string {
       const tracking = p.tracking ? ` letter-spacing="${n(p.tracking)}"` : ''
       return `<text x="${n(p.x)}" y="${n(p.y)}" font-size="${n(p.size)}" fill="${p.color}"${weight}${anchor}${tracking}>${esc(p.text)}</text>`
     }
+    case 'poly': {
+      const pts = p.pts.map((q) => `${n(q.x)},${n(q.y)}`).join(' ')
+      const sw = p.stroke ? ` stroke-width="${n(p.width ?? 0.25)}"` : ''
+      return `<polygon points="${pts}" fill="${p.fill ?? 'none'}" stroke="${p.stroke ?? 'none'}"${sw} stroke-linejoin="round"/>`
+    }
     case 'image':
       return `<image x="${n(p.x)}" y="${n(p.y)}" width="${n(p.w)}" height="${n(p.h)}" href="${esc(p.href)}" preserveAspectRatio="xMidYMid meet"/>`
   }

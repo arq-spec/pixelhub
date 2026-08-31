@@ -18,7 +18,9 @@ import {
 import { sheetPanels } from './store'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
-import type { FieldId, PanelConfig, Project, Sheet } from '../types'
+import type { FieldId, PanelConfig, Project, Rig, Sheet } from '../types'
+import { rigBounds, rigFaces } from './rigScene'
+import { faceBounds, projectFaces, VIEWS, VIEW_LABELS } from './scene3d'
 
 export type Anchor = 'start' | 'middle' | 'end'
 
@@ -42,11 +44,18 @@ export interface TextP extends HasLayer {
   x: number; y: number; text: string
   size: number; color: string; bold?: boolean; anchor?: Anchor; tracking?: number
 }
+export interface PolyP extends HasLayer {
+  kind: 'poly'
+  pts: Array<{ x: number; y: number }>
+  fill?: string
+  stroke?: string
+  width?: number
+}
 export interface ImageP extends HasLayer {
   kind: 'image'
   x: number; y: number; w: number; h: number; href: string
 }
-export type Prim = LineP | RectP | TextP | ImageP
+export type Prim = LineP | RectP | TextP | PolyP | ImageP
 
 export const LAYERS = {
   panel: 'PH-PAINEL',
@@ -55,6 +64,7 @@ export const LAYERS = {
   text: 'PH-TEXTO',
   frame: 'PH-CARIMBO',
   brand: 'PH-LOGO',
+  rig: 'PH-MONTAGEM',
 } as const
 
 export interface Cell { x0: number; y0: number; x1: number; y1: number }
@@ -369,6 +379,91 @@ function drawPanelCell(
   return den
 }
 
+/** Desenha a projeção de uma montagem dentro da sua célula. */
+function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
+  const cw = cell.x1 - cell.x0
+  const ch = cell.y1 - cell.y0
+  const cx = (cell.x0 + cell.x1) / 2
+
+  const k = Math.min(cw / FULL_CELL.w, ch / FULL_CELL.h)
+  const titleSize = clamp(DRAWING.titleSize * k, 3.0, DRAWING.titleSize)
+  const specsSize = clamp(DRAWING.specsSize * k, 2.9, DRAWING.specsSize)
+  const lineH = specsSize * (DRAWING.specsLineHeight / DRAWING.specsSize)
+
+  const faces = rigFaces(project, rig)
+  const projected = projectFaces(faces, VIEWS[rig.view])
+  const bounds = faceBounds(projected)
+  const dims = rigBounds(faces)
+
+  const lines: Array<[string, string]> = [
+    ['VISTA:', VIEW_LABELS[rig.view]],
+    ['MONTAGEM:', `${meters(dims.wMm)}x${meters(dims.hMm)}x${meters(dims.dMm)}m`],
+  ]
+
+  const title = rig.name.trim().toUpperCase()
+  const headH = title ? titleSize + DRAWING.titleGap * clamp(k, 0.55, 1) : 0
+  const specsH = (lines.length - 1) * lineH
+  const tailH = DRAWING.drawingGap * clamp(k, 0.5, 1) + DRAWING.specsGap * clamp(k, 0.55, 1) + specsH
+
+  const availW = cw
+  const availH = ch - headH - tailH
+  const spanW = bounds.x1 - bounds.x0 || 1
+  const spanH = bounds.y1 - bounds.y0 || 1
+  const den = pickScale(spanW, spanH, availW * DRAWING.fillFactor, availH * DRAWING.fillFactor)
+
+  const w = spanW / den
+  const h = spanH / den
+  const groupTop = cell.y0 + Math.max(0, (ch - (headH + h + tailH)) / 2)
+  const x = cx - w / 2
+  const y = groupTop + headH
+
+  activeLayer = LAYERS.text
+  if (title) {
+    prims.push(
+      text(cx, groupTop + titleSize, title, fitSize(title, cw, titleSize, true), COLORS.navy, {
+        bold: true, anchor: 'middle', tracking: DRAWING.titleTracking * k,
+      }),
+    )
+  }
+
+  activeLayer = LAYERS.rig
+  for (const face of projected) {
+    prims.push({
+      kind: 'poly', layer: LAYERS.rig,
+      pts: face.pts.map((p) => ({
+        x: x + (p.x - bounds.x0) / den,
+        y: y + (p.y - bounds.y0) / den,
+      })),
+      fill: face.fill,
+      stroke: face.stroke,
+      width: face.width,
+    })
+  }
+
+  activeLayer = LAYERS.text
+  const separatorY = y + h + DRAWING.drawingGap * clamp(k, 0.5, 1)
+  const specsFirst = separatorY + DRAWING.specsGap * clamp(k, 0.55, 1)
+  const gap = specsSize * 0.28
+  const widths = lines.map(
+    ([l, v]) => textWidth(l, specsSize, true) + gap + textWidth(v, specsSize, false),
+  )
+  prims.push(
+    line(
+      cx - Math.min(Math.max(...widths) / 2 + 4, cw / 2), separatorY,
+      cx + Math.min(Math.max(...widths) / 2 + 4, cw / 2), separatorY,
+      COLORS.dash, 0.3, true,
+    ),
+  )
+  lines.forEach(([label, value], i) => {
+    const ly = specsFirst + i * lineH
+    const startX = cx - widths[i] / 2
+    prims.push(text(startX, ly, label, specsSize, COLORS.navy, { bold: true }))
+    prims.push(
+      text(startX + textWidth(label, specsSize, true) + gap, ly, value, specsSize, COLORS.slateText),
+    )
+  })
+}
+
 export function buildSheetLayout(project: Project, sheet: Sheet, index: number): SheetLayout {
   const prims: Prim[] = []
   const panels = sheetPanels(project, sheet)
@@ -378,10 +473,13 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
   prims.push({ kind: 'rect', layer: LAYERS.frame, x: 0, y: 0, w: PAGE.w, h: PAGE.h, fill: '#ffffff' })
 
   // ---------------------------------------------------------------- prancha
-  const cells = panelCells(panels.length)
+  // Painéis e montagens dividem as mesmas células da prancha.
+  const rigs = project.rigs.filter((r) => sheet.activeRigIds.includes(r.id))
+  const cells = panelCells(panels.length + rigs.length)
   const scales = panels.map((panel, i) =>
     drawPanelCell(prims, sheet, panel, metrics[i], cells[i]),
   )
+  rigs.forEach((rig, i) => drawRigCell(prims, project, rig, cells[panels.length + i]))
 
   // ---------------------------------------------------------------- lateral
   activeLayer = LAYERS.frame

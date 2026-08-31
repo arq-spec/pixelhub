@@ -1,0 +1,283 @@
+import { useMemo, useRef, useState, type Dispatch } from 'react'
+import { RIG_LABELS, type Project, type Rig, type RigItem, type RigKind, type Sheet } from '../types'
+import type { Action } from '../lib/store'
+import { rigBounds, rigFaces } from '../lib/rigScene'
+import { faceBounds, projectFaces, VIEWS, VIEW_LABELS, type Camera, type ViewId } from '../lib/scene3d'
+import { meters, num } from '../lib/format'
+import { Button, Field, NumberInput, Section, TextInput, Toggle } from './ui'
+
+/** Vista da montagem, orbitável com o mouse. */
+function Viewport({ project, rig, cam }: { project: Project; rig: Rig; cam: Camera }) {
+  const faces = useMemo(() => rigFaces(project, rig), [project, rig])
+  const projected = useMemo(() => projectFaces(faces, cam), [faces, cam])
+  const b = useMemo(() => faceBounds(projected), [projected])
+
+  if (!faces.length) {
+    return <p className="hint">Adicione peças para ver a montagem.</p>
+  }
+
+  const pad = Math.max((b.x1 - b.x0), (b.y1 - b.y0)) * 0.04 || 1
+  const vb = `${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}`
+
+  return (
+    <svg className="rig3d__svg" viewBox={vb} preserveAspectRatio="xMidYMid meet">
+      {projected.map((f, i) => (
+        <polygon
+          key={i}
+          points={f.pts.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill={f.fill}
+          stroke={f.stroke}
+          strokeWidth={Math.max((b.x1 - b.x0) / 900, 1.2)}
+          strokeLinejoin="round"
+        />
+      ))}
+    </svg>
+  )
+}
+
+export function RigEditor({
+  project, sheet, index, dispatch,
+}: { project: Project; sheet: Sheet; index: number; dispatch: Dispatch<Action> }) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  // O ângulo livre é da tela; a folha usa a vista escolhida na montagem.
+  const [cam, setCam] = useState<Camera>(VIEWS.isometrica)
+  const drag = useRef<{ x: number; y: number; az: number; el: number } | null>(null)
+
+  const rigs = project.rigs
+
+  return (
+    <Section
+      title={`Montagens (${sheet.activeRigIds.length}/${rigs.length})`}
+      collapsible
+      storageKey="pixelhub.ui.rigs"
+      defaultOpen={false}
+      summary={rigs.length ? `${rigs.length} no projeto` : 'nenhuma'}
+      action={
+        <Button variant="primary" onClick={() => dispatch({ type: 'addRig' })}>
+          + Montagem
+        </Button>
+      }
+    >
+      <p className="hint">
+        A montagem reúne o painel e o que o sustenta — praticáveis, mãos francesas, volumes.
+        Marcada na folha, ela entra na prancha como uma vista, ao lado dos painéis.
+      </p>
+
+      {rigs.map((rig) => {
+        const active = sheet.activeRigIds.includes(rig.id)
+        const isOpen = openId === rig.id
+        const dims = rigBounds(rigFaces(project, rig))
+        return (
+          <div key={rig.id} className={`pcard${active ? '' : ' pcard--off'}`}>
+            <header className="pcard__head">
+              <label className="pcard__check" title="Nesta folha">
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={(e) =>
+                    dispatch({
+                      type: 'toggleRig', index, rigId: rig.id, active: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="pcard__summary"
+                onClick={() => setOpenId(isOpen ? null : rig.id)}
+              >
+                <strong>{rig.name || 'MONTAGEM'}</strong>
+                <small>
+                  {rig.items.length} peça{rig.items.length === 1 ? '' : 's'} ·{' '}
+                  {meters(dims.wMm)}×{meters(dims.hMm)}×{meters(dims.dMm)}m ·{' '}
+                  {VIEW_LABELS[rig.view]}
+                </small>
+              </button>
+              <span className="pcard__actions">
+                <Button variant="icon" onClick={() => setOpenId(isOpen ? null : rig.id)}>
+                  {isOpen ? '▾' : '▸'}
+                </Button>
+                <Button
+                  variant="icon" title="Excluir montagem"
+                  onClick={() => dispatch({ type: 'removeRig', rigId: rig.id })}
+                >
+                  ✕
+                </Button>
+              </span>
+            </header>
+
+            {isOpen ? (
+              <div className="pcard__body">
+                <Field label="Nome" wide>
+                  <TextInput
+                    value={rig.name}
+                    upper
+                    onChange={(v) => dispatch({ type: 'patchRig', rigId: rig.id, patch: { name: v } })}
+                  />
+                </Field>
+
+                <div
+                  className="rig3d"
+                  onPointerDown={(e) => {
+                    drag.current = { x: e.clientX, y: e.clientY, az: cam.az, el: cam.el }
+                    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+                  }}
+                  onPointerMove={(e) => {
+                    const d = drag.current
+                    if (!d) return
+                    setCam({
+                      az: d.az + (e.clientX - d.x) * 0.5,
+                      el: Math.max(-89, Math.min(89, d.el - (e.clientY - d.y) * 0.5)),
+                    })
+                  }}
+                  onPointerUp={() => { drag.current = null }}
+                  onPointerLeave={() => { drag.current = null }}
+                >
+                  <Viewport project={project} rig={rig} cam={cam} />
+                  <span className="rig3d__angle">
+                    az {num(cam.az, 0)}° · el {num(cam.el, 0)}°
+                  </span>
+                </div>
+
+                <div className="chips">
+                  {(Object.keys(VIEWS) as ViewId[]).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`chip${rig.view === v ? ' is-on' : ''}`}
+                      title="Define a vista da folha e leva a tela para ela"
+                      onClick={() => {
+                        dispatch({ type: 'patchRig', rigId: rig.id, patch: { view: v } })
+                        setCam(VIEWS[v])
+                      }}
+                    >
+                      {VIEW_LABELS[v]}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">
+                  Arraste a vista para girar. A vista marcada é a que sai na folha.
+                </p>
+
+                <Toggle
+                  checked={rig.showGround}
+                  onChange={(v) => dispatch({ type: 'patchRig', rigId: rig.id, patch: { showGround: v } })}
+                  label="Mostrar o piso"
+                />
+
+                <div className="regions__head">
+                  <span>Peças ({rig.items.length})</span>
+                </div>
+                <div className="chips">
+                  {(Object.keys(RIG_LABELS) as RigKind[]).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      className="chip"
+                      onClick={() =>
+                        dispatch({
+                          type: 'addRigItem', rigId: rig.id, kind,
+                          panelId: kind === 'painel' ? project.panels[0]?.id : undefined,
+                        })
+                      }
+                    >
+                      + {RIG_LABELS[kind]}
+                    </button>
+                  ))}
+                </div>
+
+                {rig.items.map((item) => (
+                  <RigItemCard
+                    key={item.id}
+                    rigId={rig.id}
+                    item={item}
+                    project={project}
+                    dispatch={dispatch}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </Section>
+  )
+}
+
+function RigItemCard({
+  rigId, item, project, dispatch,
+}: { rigId: string; item: RigItem; project: Project; dispatch: Dispatch<Action> }) {
+  const set = (patch: Partial<RigItem>) =>
+    dispatch({ type: 'patchRigItem', rigId, itemId: item.id, patch })
+  const panel = project.panels.find((p) => p.id === item.panelId) ?? null
+
+  return (
+    <div className="rigitem">
+      <header className="rigitem__head">
+        <strong>{RIG_LABELS[item.kind]}</strong>
+        <input
+          className="region__name"
+          value={item.name}
+          onChange={(e) => set({ name: e.target.value })}
+        />
+        <Button
+          variant="icon" title="Remover peça"
+          onClick={() => dispatch({ type: 'removeRigItem', rigId, itemId: item.id })}
+        >
+          ✕
+        </Button>
+      </header>
+
+      {item.kind === 'painel' ? (
+        <Field label="Painel do projeto" wide>
+          <select
+            className="input"
+            value={item.panelId ?? ''}
+            onChange={(e) => set({ panelId: e.target.value || null })}
+          >
+            <option value="">— escolher —</option>
+            {project.panels.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
+
+      <div className="grid3">
+        <Field label="X (largura)"><NumberInput value={item.x / 1000} step={0.1} min={-1000} suffix="m" onChange={(v) => set({ x: v * 1000 })} /></Field>
+        <Field label="Y (altura)"><NumberInput value={item.y / 1000} step={0.1} min={-1000} suffix="m" onChange={(v) => set({ y: v * 1000 })} /></Field>
+        <Field label="Z (fundo)"><NumberInput value={item.z / 1000} step={0.1} min={-1000} suffix="m" onChange={(v) => set({ z: v * 1000 })} /></Field>
+      </div>
+
+      {item.kind === 'painel' ? (
+        <p className="hint">
+          {panel
+            ? `Largura e altura vêm do painel: ${meters(panel.widthMm)}×${meters(panel.heightMm)}m.`
+            : 'Escolha um painel do projeto.'}
+        </p>
+      ) : (
+        <div className="grid3">
+          <Field label="Largura"><NumberInput value={item.wMm / 1000} step={0.1} min={0.01} suffix="m" onChange={(v) => set({ wMm: v * 1000 })} /></Field>
+          <Field label={item.kind === 'maoFrancesa' ? 'Cateto vert.' : 'Altura'}>
+            <NumberInput value={item.hMm / 1000} step={0.1} min={0.01} suffix="m" onChange={(v) => set({ hMm: v * 1000 })} />
+          </Field>
+          <Field label={item.kind === 'maoFrancesa' ? 'Cateto horiz.' : 'Profundidade'}>
+            <NumberInput value={item.dMm / 1000} step={0.1} min={0.01} suffix="m" onChange={(v) => set({ dMm: v * 1000 })} />
+          </Field>
+        </div>
+      )}
+
+      <div className="grid3">
+        {item.kind === 'praticavel' ? (
+          <Field label="Perna (regulagem)">
+            <NumberInput value={item.legMm / 1000} step={0.05} min={0} suffix="m" onChange={(v) => set({ legMm: v * 1000 })} />
+          </Field>
+        ) : null}
+        <Field label="Repetições"><NumberInput value={item.count} step={1} min={1} onChange={(v) => set({ count: Math.round(v) })} /></Field>
+        {item.count > 1 ? (
+          <Field label="Passo"><NumberInput value={item.stepMm / 1000} step={0.1} min={0.01} suffix="m" onChange={(v) => set({ stepMm: v * 1000 })} /></Field>
+        ) : null}
+      </div>
+    </div>
+  )
+}

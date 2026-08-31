@@ -76,6 +76,18 @@ processador enxerga o painel.
   ligadas por padrão dimensão, pixels, peso e consumo; as demais ficam à mão
   para quando a folha pedir. O quadro sai logo abaixo do desenho, separado só
   pela linha tracejada.
+- **Montagens em 3D** — a composição do evento: o painel e o que o sustenta.
+  Peças disponíveis: painel de LED (puxa a forma real do catálogo, vão de
+  pórtico incluso), praticável de palco com altura de perna regulável, mão
+  francesa e volumes genéricos. Cada peça tem posição em X, Y e Z, e pode ser
+  repetida com passo — três praticáveis em fila são uma peça só.
+  A vista gira com o mouse e sai na folha em **isométrica, frontal, lateral ou
+  superior**, ao lado dos painéis, com a envoltória da montagem no quadro.
+
+  Não há renderizador 3D: a cena é projetada ortogonalmente para as mesmas
+  primitivas vetoriais da folha, com as faces ordenadas do fundo para a frente.
+  É o que faz a isométrica sair no PDF e no DXF como geometria — na camada
+  `PH-MONTAGEM` — e não como imagem.
 - **Carimbo** — evento, título da folha, desenhista, data do evento, emissão e
   número da folha. **Data do evento em branco imprime `A DEFINIR`.**
 - **Legendas** — bloco de observações livre, uma por linha, com quebra
@@ -99,7 +111,8 @@ processador enxerga o painel.
   Helvetica — não é uma imagem rasterizada.
 - O **SVG** sai com dimensões físicas em milímetros.
 - O **DXF** é AutoCAD R12 ASCII, em milímetros, com as camadas separadas —
-  `PH-PAINEL`, `PH-MODULOS`, `PH-COTAS`, `PH-TEXTO`, `PH-CARIMBO`, `PH-LOGO` —
+  `PH-PAINEL`, `PH-MODULOS`, `PH-COTAS`, `PH-TEXTO`, `PH-CARIMBO`, `PH-LOGO`,
+  `PH-MONTAGEM` —
   para abrir no AutoCAD, BricsCAD, LibreCAD ou QCAD. Caracteres acentuados vão
   como escapes `\U+XXXX`, que é a forma portátil no R12.
 
@@ -152,6 +165,8 @@ src/
   lib/
     calc.ts             módulos, área, peso, consumo e resolução
     layout.ts           monta a folha como primitivas geométricas em mm
+    scene3d.ts          projeção ortogonal da cena 3D para o plano do desenho
+    rigScene.ts         monta a cena da montagem a partir das peças
     sheetSpec.ts        geometria da prancha A3, medida sobre o PDF de referência
     measure.ts          métrica da Helvetica, para centralizar texto sem DOM
     store.ts            estado do projeto, reducer e persistência

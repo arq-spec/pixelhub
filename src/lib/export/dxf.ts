@@ -157,6 +157,17 @@ export function renderDxf(layout: SheetLayout): string {
         break
       }
 
+      case 'poly': {
+        // O DXF leva o contorno: preenchimento de tela não vira geometria.
+        if (!p.stroke || p.pts.length < 2) break
+        for (let i = 0; i < p.pts.length; i++) {
+          const a = p.pts[i]
+          const b = p.pts[(i + 1) % p.pts.length]
+          emitLine(a.x, a.y, b.x, b.y, lay)
+        }
+        break
+      }
+
       case 'image':
         // Imagens raster não têm equivalente vetorial; o quadro do logotipo
         // é marcado para o desenhista reposicionar a marca no CAD.

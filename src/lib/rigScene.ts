@@ -1,0 +1,158 @@
+import type { PanelConfig, Project, Rig, RigItem } from '../types'
+import { cellRects, computeMetrics, hasPlate, outlineOf } from './calc'
+import { box, wedge, type Face, type Vec3 } from './scene3d'
+import { COLORS } from './sheetSpec'
+import { tint } from './layout'
+
+/** Tons neutros das peças, quando nenhuma cor foi atribuída. */
+const SHADE = {
+  panel: '#eef3f9',
+  deck: '#e6e9ee',
+  brace: '#dfe4ea',
+  volume: '#e9edf2',
+  ground: '#f6f8fa',
+} as const
+
+const stroke = COLORS.moduleStroke
+
+/** Placas do painel como volume, respeitando o formato livre. */
+function panelFaces(item: RigItem, panel: PanelConfig | null): Face[] {
+  const faces: Face[] = []
+  const fill = item.color ? tint(item.color, 0.72) : SHADE.panel
+  const style = { fill, stroke, width: 0.25 }
+
+  if (!panel) {
+    return box(item.x, item.y, item.z, item.wMm, item.hMm, item.dMm, style)
+  }
+
+  const m = computeMetrics(panel)
+  const d = item.dMm
+  // A altura do painel cresce para cima a partir de `y`; a grade conta de
+  // cima para baixo, então a linha 0 fica no topo.
+  const top = item.y + panel.heightMm
+  const px = (mm: number) => item.x + mm
+  const py = (mm: number) => top - mm
+
+  const p = (x: number, y: number, z: number): Vec3 => ({ x, y, z })
+
+  for (const c of cellRects(m, (col, row) => hasPlate(panel, col, row))) {
+    const x0 = px(c.x0), x1 = px(c.x1)
+    const y0 = py(c.y1), y1 = py(c.y0)
+    // Frente e fundo por placa: é o que deixa a modulação visível.
+    faces.push({ pts: [p(x0, y0, item.z), p(x1, y0, item.z), p(x1, y1, item.z), p(x0, y1, item.z)], ...style })
+    faces.push({ pts: [p(x0, y0, item.z + d), p(x1, y0, item.z + d), p(x1, y1, item.z + d), p(x0, y1, item.z + d)], ...style })
+  }
+
+  // As laterais só existem no contorno da forma: num pórtico, contornam o vão.
+  for (const seg of outlineOf(m, (col, row) => hasPlate(panel, col, row))) {
+    const a = { x: px(seg.x1), y: py(seg.y1) }
+    const b = { x: px(seg.x2), y: py(seg.y2) }
+    faces.push({
+      pts: [
+        p(a.x, a.y, item.z), p(b.x, b.y, item.z),
+        p(b.x, b.y, item.z + d), p(a.x, a.y, item.z + d),
+      ],
+      ...style,
+    })
+  }
+  return faces
+}
+
+/** Praticável: tampo apoiado em quatro pernas reguláveis. */
+function deckFaces(item: RigItem): Face[] {
+  const fill = item.color ? tint(item.color, 0.72) : SHADE.deck
+  const style = { fill, stroke, width: 0.25 }
+  const leg = Math.max(0, item.legMm)
+  const faces = box(item.x, item.y + leg, item.z, item.wMm, item.hMm, item.dMm, style)
+
+  const t = 80
+  const inset = 40
+  const corners: Array<[number, number]> = [
+    [item.x + inset, item.z + inset],
+    [item.x + item.wMm - inset - t, item.z + inset],
+    [item.x + inset, item.z + item.dMm - inset - t],
+    [item.x + item.wMm - inset - t, item.z + item.dMm - inset - t],
+  ]
+  for (const [lx, lz] of corners) {
+    faces.push(...box(lx, item.y, lz, t, leg, t, { ...style, width: 0.2 }))
+  }
+  return faces
+}
+
+/** Peças de uma montagem, já com as repetições resolvidas. */
+export function rigFaces(project: Project, rig: Rig): Face[] {
+  const faces: Face[] = []
+  const panelById = new Map(project.panels.map((p) => [p.id, p]))
+
+  for (const item of rig.items) {
+    const times = Math.max(1, Math.round(item.count))
+    for (let i = 0; i < times; i++) {
+      const at: RigItem = { ...item, x: item.x + i * item.stepMm }
+      switch (item.kind) {
+        case 'painel':
+          faces.push(...panelFaces(at, at.panelId ? panelById.get(at.panelId) ?? null : null))
+          break
+        case 'praticavel':
+          faces.push(...deckFaces(at))
+          break
+        case 'maoFrancesa':
+          faces.push(
+            ...wedge(at.x, at.y, at.z, at.wMm, at.hMm, at.dMm, {
+              fill: at.color ? tint(at.color, 0.72) : SHADE.brace,
+              stroke,
+              width: 0.25,
+            }),
+          )
+          break
+        default:
+          faces.push(
+            ...box(at.x, at.y, at.z, at.wMm, at.hMm, at.dMm, {
+              fill: at.color ? tint(at.color, 0.72) : SHADE.volume,
+              stroke,
+              width: 0.25,
+            }),
+          )
+      }
+    }
+  }
+
+  if (rig.showGround && faces.length) {
+    // Piso de referência: dá o apoio visual sem competir com as peças.
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (const f of faces) {
+      for (const p of f.pts) {
+        x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
+        z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z)
+      }
+    }
+    const pad = 600
+    faces.unshift({
+      pts: [
+        { x: x0 - pad, y: 0, z: z0 - pad },
+        { x: x1 + pad, y: 0, z: z0 - pad },
+        { x: x1 + pad, y: 0, z: z1 + pad },
+        { x: x0 - pad, y: 0, z: z1 + pad },
+      ],
+      fill: SHADE.ground,
+      stroke: COLORS.dash,
+      width: 0.2,
+    })
+  }
+
+  return faces
+}
+
+/** Envoltória da montagem em milímetros, para o quadro de dados. */
+export function rigBounds(faces: Face[]) {
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity
+  let x1 = -Infinity, y1 = -Infinity, z1 = -Infinity
+  for (const f of faces) {
+    for (const p of f.pts) {
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
+      y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y)
+      z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z)
+    }
+  }
+  if (!Number.isFinite(x0)) return { wMm: 0, hMm: 0, dMm: 0 }
+  return { wMm: x1 - x0, hMm: y1 - y0, dMm: z1 - z0 }
+}

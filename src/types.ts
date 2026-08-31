@@ -136,6 +136,8 @@ export interface Sheet {
    * A ordem do desenho é a do catálogo do projeto.
    */
   activePanelIds: string[]
+  /** Montagens que esta folha desenha, por id. */
+  activeRigIds: string[]
   /** Linhas do quadro OBSERVAÇÕES. */
   notes: string[]
   /**
@@ -151,6 +153,53 @@ export interface Sheet {
   showColorLegend: boolean
 }
 
+/** Tipos de peça que compõem uma montagem. */
+export type RigKind = 'painel' | 'praticavel' | 'maoFrancesa' | 'volume'
+
+export const RIG_LABELS: Record<RigKind, string> = {
+  painel: 'Painel de LED',
+  praticavel: 'Praticável',
+  maoFrancesa: 'Mão francesa',
+  volume: 'Volume',
+}
+
+/**
+ * Uma peça da montagem, posicionada em milímetros.
+ * X é a largura, Y a altura a partir do chão e Z a profundidade.
+ */
+export interface RigItem {
+  id: string
+  kind: RigKind
+  name: string
+  x: number
+  y: number
+  z: number
+  /** Largura, altura e profundidade. No painel, largura e altura vêm dele. */
+  wMm: number
+  hMm: number
+  dMm: number
+  /** Painel do catálogo representado por esta peça, quando `kind` é painel. */
+  panelId: string | null
+  /** Altura das pernas do praticável — o que a regulagem muda. */
+  legMm: number
+  /** Repetições ao longo de X, para enfileirar praticáveis ou mãos francesas. */
+  count: number
+  /** Distância entre repetições, de eixo a eixo. */
+  stepMm: number
+  color: string | null
+}
+
+/** Uma montagem: o painel e o que o sustenta, vistos em conjunto. */
+export interface Rig {
+  id: string
+  name: string
+  items: RigItem[]
+  /** Projeção usada quando a montagem entra na folha. */
+  view: 'isometrica' | 'frontal' | 'lateral' | 'superior'
+  /** Desenha o piso de referência sob a montagem. */
+  showGround: boolean
+}
+
 export interface Brand {
   /** Assinatura impressa acima do carimbo quando não há logotipo. */
   name: string
@@ -162,6 +211,8 @@ export interface Project {
   brand: Brand
   /** Catálogo de painéis do projeto, compartilhado por todas as folhas. */
   panels: PanelConfig[]
+  /** Catálogo de montagens do projeto. */
+  rigs: Rig[]
   /** Nome do evento, no topo do carimbo. */
   eventName: string
   desenhista: string

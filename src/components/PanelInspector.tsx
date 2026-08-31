@@ -4,6 +4,7 @@ import {
   type PanelConfig, type PitchId, type Project, type Sheet,
 } from '../types'
 import { GridEditor, type GridMode } from './GridEditor'
+import { RigEditor } from './RigEditor'
 import { sheetPanels, syncPitchNote, type Action } from '../lib/store'
 import { computeMetrics, derivedRegions, regionMetrics, snapToModule, type Metrics } from '../lib/calc'
 import { meters, num } from '../lib/format'
@@ -117,6 +118,8 @@ export function PanelInspector({
           </p>
         ) : null}
       </Section>
+
+      <RigEditor project={project} sheet={sheet} index={index} dispatch={dispatch} />
 
       <Section
         title="Informações na folha"
