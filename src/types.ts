@@ -24,6 +24,11 @@ export const POWER_KVA_PER_M2 = 0.5
 export const DEFAULT_MODULE_MM = { w: 500, h: 500 }
 
 export interface PanelConfig {
+  /**
+   * Identidade do painel dentro do projeto. As folhas referenciam este id,
+   * então editar o painel uma vez vale para todas as folhas que o usam.
+   */
+  id: string
   /** Nome exibido acima do desenho, ex.: "TOTEM", "PAINEL PRINCIPAL". */
   name: string
   /** Largura do painel em milímetros. */
@@ -78,8 +83,12 @@ export interface Sheet {
   id: string
   /** Título impresso no carimbo, ex.: "PIXELMAP". */
   title: string
-  /** Painéis desenhados nesta folha. A folha comporta mais de um. */
-  panels: PanelConfig[]
+  /**
+   * Painéis do projeto que esta folha desenha, por id. Desmarcar um painel
+   * apenas o retira desta folha — ele continua no projeto e pode voltar.
+   * A ordem do desenho é a do catálogo do projeto.
+   */
+  activePanelIds: string[]
   /** Linhas do quadro OBSERVAÇÕES. */
   notes: string[]
   /**
@@ -102,6 +111,8 @@ export interface Brand {
 
 export interface Project {
   brand: Brand
+  /** Catálogo de painéis do projeto, compartilhado por todas as folhas. */
+  panels: PanelConfig[]
   /** Nome do evento, no topo do carimbo. */
   eventName: string
   desenhista: string

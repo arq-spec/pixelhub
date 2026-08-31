@@ -31,10 +31,17 @@ processador enxerga o painel.
 
 - **Painel** — largura e altura em metros, pitch P1.9 ou P2.9, tamanho de
   módulo configurável (predefinições 500×500, 500×1000, 480×485, 600×337,5).
-- **Vários painéis por folha** — uma folha comporta quantos painéis forem
-  precisos, cada um com seu desenho, título e quadro de dados. Até três ficam
-  lado a lado; acima disso a prancha ganha uma segunda fila, e a tipografia
-  acompanha o tamanho da célula.
+- **Painéis são do projeto, não da folha** — o projeto tem um catálogo de
+  painéis e cada folha marca quais deles desenha. Editar um painel vale para
+  todas as folhas que o usam; desmarcá-lo apenas o retira daquela folha, e
+  ele volta com um clique. Excluir, aí sim, remove do projeto inteiro.
+- **Vários painéis por folha** — uma folha desenha quantos painéis estiverem
+  marcados, cada um com seu título e quadro de dados. Até três ficam lado a
+  lado; acima disso a prancha ganha uma segunda fila, e a tipografia acompanha
+  o tamanho da célula.
+- **Lista compacta** — cada painel do catálogo recolhe numa linha só, com nome,
+  medida, pitch e número de módulos, para a coluna de edição não crescer junto
+  com o projeto.
 - **Placas de preenchimento** — quando a altura sobra exatamente meia placa
   (um painel de 2,50 m com gabinete 500×1000), a sobra é completada com placas
   quadradas de 500×500 **na fileira superior**, desenhadas como peças reais e

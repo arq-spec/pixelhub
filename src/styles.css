@@ -279,21 +279,40 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-3);
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  overflow: hidden;
 }
+/* Painel que existe no projeto mas não entra nesta folha. */
+.pcard--off { opacity: .55; }
+.pcard--off:hover { opacity: .8; }
 
-.pcard__head {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding-bottom: 8px; border-bottom: 1px solid var(--line);
+.pcard__head { display: flex; align-items: center; gap: 8px; padding: 8px 9px; }
+
+.pcard__check { display: flex; flex: 0 0 auto; }
+.pcard__check input { accent-color: var(--accent-2); width: 15px; height: 15px; cursor: pointer; }
+
+.pcard__summary {
+  flex: 1; min-width: 0; text-align: left;
+  background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
 }
-.pcard__head strong {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+.pcard__summary strong {
+  display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pcard__actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.pcard__summary small {
+  display: block; font-size: 10.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pcard__actions { display: flex; gap: 3px; flex: 0 0 auto; }
+
+.pcard__body {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 9px 11px;
+  border-top: 1px solid var(--line);
+  background: rgba(0, 0, 0, .16);
+}
+
+.rowactions { display: flex; gap: 6px; }
 
 .metrics--totals { border-top: 1px solid var(--line); padding-top: 10px; }
 
@@ -304,3 +323,4 @@ body {
   font-size: 11.5px; line-height: 1.5;
 }
 .note--ok { background: #12241d; border: 1px solid #2c5c48; color: #8fd9b8; }
+.note--warn { background: #241d10; border: 1px solid #6b5320; color: #e8c887; }

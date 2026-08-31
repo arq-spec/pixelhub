@@ -12,6 +12,7 @@ import {
   STAMP,
 } from './sheetSpec'
 import { computeMetrics, moduleEdges, runKinds, type Metrics } from './calc'
+import { sheetPanels } from './store'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
 import type { FieldId, PanelConfig, Project, Sheet } from '../types'
@@ -291,7 +292,7 @@ function drawPanelCell(
 
 export function buildSheetLayout(project: Project, sheet: Sheet, index: number): SheetLayout {
   const prims: Prim[] = []
-  const panels = sheet.panels.length ? sheet.panels : []
+  const panels = sheetPanels(project, sheet)
   const metrics = panels.map(computeMetrics)
 
   activeLayer = LAYERS.frame

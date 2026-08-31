@@ -32,10 +32,11 @@ export function syncPitchNote(notes: string[], label: string, addIfMissing = fal
 }
 
 let seq = 0
-const uid = () => `s${Date.now().toString(36)}${(seq++).toString(36)}`
+const uid = (prefix: string) => `${prefix}${Date.now().toString(36)}${(seq++).toString(36)}`
 
 export function makePanel(partial?: Partial<PanelConfig>): PanelConfig {
   return {
+    id: uid('p'),
     name: 'PAINEL PRINCIPAL',
     widthMm: 4000,
     heightMm: 2500,
@@ -47,31 +48,35 @@ export function makePanel(partial?: Partial<PanelConfig>): PanelConfig {
 }
 
 export function makeSheet(partial?: Partial<Sheet>): Sheet {
-  const panels = partial?.panels?.length
-    ? partial.panels.map((p) => makePanel(p))
-    : [makePanel()]
   return {
-    id: uid(),
+    id: uid('s'),
     title: 'PIXELMAP',
     notes: [...DEFAULT_NOTES],
     numberOverride: null,
     showDimensions: false,
+    activePanelIds: [],
     ...partial,
-    panels,
     fields: { ...DEFAULT_FIELDS, ...(partial?.fields ?? {}) },
   }
 }
 
 export function makeProject(): Project {
+  const panel = makePanel()
   return {
     brand: { name: '', logoDataUri: DEFAULT_LOGO_DATA_URI },
+    panels: [panel],
     eventName: 'NOME DO EVENTO',
     desenhista: 'GABRIEL',
     eventDate: '',
     issueDate: todayIso(),
-    sheets: [makeSheet()],
+    sheets: [makeSheet({ activePanelIds: [panel.id] })],
     activeIndex: 0,
   }
+}
+
+/** Painéis que a folha desenha, na ordem do catálogo do projeto. */
+export function sheetPanels(project: Project, sheet: Sheet): PanelConfig[] {
+  return project.panels.filter((p) => sheet.activePanelIds.includes(p.id))
 }
 
 export type Action =
@@ -84,11 +89,14 @@ export type Action =
   | { type: 'moveSheet'; index: number; delta: number }
   | { type: 'patchSheet'; index: number; patch: Partial<Omit<Sheet, 'panels'>> }
   | { type: 'toggleField'; index: number; field: FieldId; value: boolean }
-  | { type: 'addPanel'; index: number }
-  | { type: 'duplicatePanel'; index: number; panelIndex: number }
-  | { type: 'removePanel'; index: number; panelIndex: number }
-  | { type: 'movePanel'; index: number; panelIndex: number; delta: number }
-  | { type: 'patchPanel'; index: number; panelIndex: number; patch: Partial<PanelConfig> }
+  /** Cria um painel no projeto e já o ativa na folha aberta. */
+  | { type: 'addPanel' }
+  | { type: 'duplicatePanel'; panelId: string }
+  | { type: 'removePanel'; panelId: string }
+  | { type: 'movePanel'; panelId: string; delta: number }
+  | { type: 'patchPanel'; panelId: string; patch: Partial<PanelConfig> }
+  /** Liga ou desliga um painel do projeto nesta folha. */
+  | { type: 'togglePanel'; index: number; panelId: string; active: boolean }
   | { type: 'clearOverrides' }
   | { type: 'load'; project: Project }
   | { type: 'reset' }
@@ -120,7 +128,7 @@ export function reducer(state: Project, action: Action): Project {
           ? {
               title: source.title,
               notes: [...source.notes],
-              panels: source.panels.map((p) => ({ ...p })),
+              activePanelIds: [...source.activePanelIds],
               showDimensions: source.showDimensions,
               fields: { ...source.fields },
             }
@@ -136,7 +144,7 @@ export function reducer(state: Project, action: Action): Project {
       const copy = makeSheet({
         title: source.title,
         notes: [...source.notes],
-        panels: source.panels.map((p) => ({ ...p })),
+        activePanelIds: [...source.activePanelIds],
         showDimensions: source.showDimensions,
         fields: { ...source.fields },
       })
@@ -169,58 +177,78 @@ export function reducer(state: Project, action: Action): Project {
         fields: { ...s.fields, [action.field]: action.value },
       }))
 
-    case 'addPanel':
-      return mapSheet(state, action.index, (s) => {
-        const last = s.panels[s.panels.length - 1]
-        return {
+    case 'addPanel': {
+      const last = state.panels[state.panels.length - 1]
+      const panel = makePanel({ ...last, id: undefined, name: `PAINEL ${state.panels.length + 1}` })
+      const withPanel = { ...state, panels: [...state.panels, panel] }
+      // O painel novo já entra ativo na folha que está aberta.
+      return mapSheet(withPanel, state.activeIndex, (s) => ({
+        ...s,
+        activePanelIds: [...s.activePanelIds, panel.id],
+      }))
+    }
+
+    case 'duplicatePanel': {
+      const at = state.panels.findIndex((p) => p.id === action.panelId)
+      if (at < 0) return state
+      const copy = makePanel({ ...state.panels[at], id: undefined })
+      const panels = [...state.panels]
+      panels.splice(at + 1, 0, copy)
+      return mapSheet({ ...state, panels }, state.activeIndex, (s) => ({
+        ...s,
+        activePanelIds: [...s.activePanelIds, copy.id],
+      }))
+    }
+
+    case 'removePanel': {
+      if (state.panels.length <= 1) return state
+      return {
+        ...state,
+        panels: state.panels.filter((p) => p.id !== action.panelId),
+        // Sai do catálogo e, com ele, de todas as folhas.
+        sheets: state.sheets.map((s) => ({
           ...s,
-          panels: [
-            ...s.panels,
-            makePanel({ ...last, name: `PAINEL ${s.panels.length + 1}` }),
-          ],
-        }
-      })
+          activePanelIds: s.activePanelIds.filter((id) => id !== action.panelId),
+        })),
+      }
+    }
 
-    case 'duplicatePanel':
-      return mapSheet(state, action.index, (s) => {
-        const source = s.panels[action.panelIndex]
-        if (!source) return s
-        const panels = [...s.panels]
-        panels.splice(action.panelIndex + 1, 0, { ...source })
-        return { ...s, panels }
-      })
+    case 'movePanel': {
+      const at = state.panels.findIndex((p) => p.id === action.panelId)
+      const to = at + action.delta
+      if (at < 0 || to < 0 || to >= state.panels.length) return state
+      const panels = [...state.panels]
+      const [moved] = panels.splice(at, 1)
+      panels.splice(to, 0, moved)
+      return { ...state, panels }
+    }
 
-    case 'removePanel':
-      return mapSheet(state, action.index, (s) =>
-        s.panels.length <= 1
-          ? s
-          : { ...s, panels: s.panels.filter((_, i) => i !== action.panelIndex) },
+    case 'patchPanel': {
+      const current = state.panels.find((p) => p.id === action.panelId)
+      if (!current) return state
+      const panels = state.panels.map((p) =>
+        p.id === action.panelId ? { ...p, ...action.patch } : p,
       )
+      // Trocar o pitch reescreve a observação correspondente nas folhas que
+      // desenham este painel.
+      const changedPitch = action.patch.pitch && action.patch.pitch !== current.pitch
+      const sheets = changedPitch
+        ? state.sheets.map((s) =>
+            s.activePanelIds.includes(action.panelId)
+              ? { ...s, notes: syncPitchNote(s.notes, PITCHES[action.patch.pitch!].label) }
+              : s,
+          )
+        : state.sheets
+      return { ...state, panels, sheets }
+    }
 
-    case 'movePanel':
-      return mapSheet(state, action.index, (s) => {
-        const to = action.panelIndex + action.delta
-        if (to < 0 || to >= s.panels.length) return s
-        const panels = [...s.panels]
-        const [moved] = panels.splice(action.panelIndex, 1)
-        panels.splice(to, 0, moved)
-        return { ...s, panels }
-      })
-
-    case 'patchPanel':
-      return mapSheet(state, action.index, (s) => {
-        const current = s.panels[action.panelIndex]
-        if (!current) return s
-        const panels = s.panels.map((p, i) =>
-          i === action.panelIndex ? { ...p, ...action.patch } : p,
-        )
-        // Trocar o pitch reescreve a observação correspondente, se houver.
-        const notes =
-          action.patch.pitch && action.patch.pitch !== current.pitch
-            ? syncPitchNote(s.notes, PITCHES[action.patch.pitch].label)
-            : s.notes
-        return { ...s, panels, notes }
-      })
+    case 'togglePanel':
+      return mapSheet(state, action.index, (s) => ({
+        ...s,
+        activePanelIds: action.active
+          ? [...new Set([...s.activePanelIds, action.panelId])]
+          : s.activePanelIds.filter((id) => id !== action.panelId),
+      }))
 
     case 'clearOverrides':
       return { ...state, sheets: state.sheets.map((s) => ({ ...s, numberOverride: null })) }
@@ -236,21 +264,61 @@ export function reducer(state: Project, action: Action): Project {
   }
 }
 
-/** Reidrata o projeto salvo tolerando arquivos antigos ou incompletos. */
+/** Assinatura de conteúdo de um painel, para unificar duplicatas na migração. */
+const panelKey = (p: Omit<PanelConfig, 'id'> & { id?: string }) =>
+  [p.name, p.widthMm, p.heightMm, p.pitch, p.moduleWMm, p.moduleHMm].join('|')
+
+/**
+ * Reidrata o projeto salvo, tolerando os formatos anteriores:
+ * - `sheet.panel` (um painel por folha);
+ * - `sheet.panels` (vários painéis, mas copiados por folha).
+ *
+ * Nos dois casos os painéis sobem para o catálogo do projeto. Painéis
+ * idênticos em folhas diferentes viram uma entrada só, que é justamente o
+ * comportamento que o catálogo passa a garantir daqui em diante.
+ */
 export function hydrate(raw: unknown): Project | null {
   if (!raw || typeof raw !== 'object') return null
-  // `panel` (singular) é o formato anterior à folha com vários painéis.
-  type StoredSheet = Partial<Sheet> & { panel?: PanelConfig }
-  const data = raw as Omit<Partial<Project>, 'sheets'> & { sheets?: StoredSheet[] }
+  type StoredPanel = Partial<PanelConfig>
+  type StoredSheet = Omit<Partial<Sheet>, 'activePanelIds'> & {
+    panel?: StoredPanel
+    panels?: StoredPanel[]
+    activePanelIds?: string[]
+  }
+  type StoredProject = Omit<Partial<Project>, 'sheets' | 'panels'> & {
+    sheets?: StoredSheet[]
+    panels?: StoredPanel[]
+  }
+  const data = raw as StoredProject
   if (!Array.isArray(data.sheets) || data.sheets.length === 0) return null
   const base = makeProject()
-  const sheets = data.sheets.map((s) =>
-    // Projetos salvos antes da folha com vários painéis traziam `panel`.
-    makeSheet({ ...s, panels: s.panels ?? (s.panel ? [s.panel] : undefined) }),
-  )
+
+  const catalog: PanelConfig[] = (data.panels ?? []).map((p) => makePanel(p))
+  const byKey = new Map(catalog.map((p) => [panelKey(p), p.id]))
+
+  /** Devolve o id do painel no catálogo, criando a entrada se preciso. */
+  const adopt = (stored: StoredPanel): string => {
+    const panel = makePanel(stored)
+    const key = panelKey(panel)
+    const existing = byKey.get(key)
+    if (existing) return existing
+    catalog.push(panel)
+    byKey.set(key, panel.id)
+    return panel.id
+  }
+
+  const sheets = data.sheets.map((s) => {
+    const legacy = s.panels ?? (s.panel ? [s.panel] : [])
+    const activePanelIds = s.activePanelIds ?? legacy.map(adopt)
+    return makeSheet({ ...s, activePanelIds })
+  })
+
+  if (catalog.length === 0) catalog.push(...base.panels)
+
   return {
     ...base,
     ...data,
+    panels: catalog,
     brand: { ...base.brand, ...(data.brand ?? {}) },
     sheets,
     activeIndex: clampIndex(data.activeIndex ?? 0, sheets.length),

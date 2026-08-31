@@ -1,10 +1,20 @@
 import type { Dispatch } from 'react'
-import type { Project } from '../types'
+import type { Project, Sheet } from '../types'
 import type { Action } from '../lib/store'
 import { sheetNumber } from '../lib/layout'
+import { sheetPanels } from '../lib/store'
 import { meters } from '../lib/format'
 import { SheetThumb } from './SheetPreview'
 import { Button, Section } from './ui'
+
+/** Resumo dos painéis da folha, para a miniatura na lista. */
+function describePanels(project: Project, sheet: Sheet): string {
+  const panels = sheetPanels(project, sheet)
+  if (panels.length === 0) return 'sem painel ativo'
+  if (panels.length > 1) return `${panels.length} painéis · ${panels[0].pitch}`
+  const p = panels[0]
+  return `${p.name} · ${meters(p.widthMm)}×${meters(p.heightMm)}m · ${p.pitch}`
+}
 
 export function SheetList({
   project, dispatch,
@@ -36,11 +46,7 @@ export function SheetList({
                 </span>
                 <span className="sheets__meta">
                   <strong>{sheet.title || 'SEM TÍTULO'}</strong>
-                  <small>
-                    {sheet.panels.length > 1
-                      ? `${sheet.panels.length} painéis · ${sheet.panels[0].pitch}`
-                      : `${sheet.panels[0].name} · ${meters(sheet.panels[0].widthMm)}×${meters(sheet.panels[0].heightMm)}m · ${sheet.panels[0].pitch}`}
-                  </small>
+                  <small>{describePanels(project, sheet)}</small>
                 </span>
               </button>
 
