@@ -107,11 +107,11 @@ function modulesLabel(m: Metrics): string {
 
 /** Linhas do quadro de dados, como pares rótulo/valor, já filtradas. */
 export function specLines(
-  sheet: Sheet, panel: PanelConfig, m: Metrics, scaleDen: number,
+  sheet: Sheet, _panel: PanelConfig, m: Metrics, scaleDen: number,
 ): Array<[string, string]> {
-  const name = panel.name.trim() || 'PAINEL'
+  // O nome do painel já encabeça o desenho; aqui a linha é sempre "PAINEL:".
   const all: Array<[FieldId, string, string]> = [
-    ['dimensao', `${name}:`, `${meters(m.widthMm)}x${meters(m.heightMm)}m`],
+    ['dimensao', 'PAINEL:', `${meters(m.widthMm)}x${meters(m.heightMm)}m`],
     ['pixels', 'PIXELS:', `${m.pixelsW}x${m.pixelsH}p`],
     ['modulos', 'MÓDULOS:', modulesLabel(m)],
     ['area', 'ÁREA TOTAL:', `${num(m.areaM2, 2)} m²`],
@@ -195,7 +195,10 @@ function drawPanelCell(
   const availW = cw - dimPad * 2
   const availH = band.bottom - band.top - reserve
 
-  const den = pickScale(m.widthMm, m.heightMm, availW, availH)
+  const den = pickScale(
+    m.widthMm, m.heightMm,
+    availW * DRAWING.fillFactor, availH * DRAWING.fillFactor,
+  )
   const w = m.widthMm / den
   const h = m.heightMm / den
   const x = cx - w / 2

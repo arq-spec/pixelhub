@@ -39,10 +39,10 @@ export const LEGEND = {
 export const STAMP = {
   ruleY: 220.8,
   ruleWidth: 0.6,
-  // Logotipo a 200% do tamanho original: a caixa passou de 9,4 para 18,8 mm de
+  // Logotipo a 150% do tamanho original: a caixa passou de 9,4 para 14,1 mm de
   // altura, mantendo o mesmo centro entre a régua e o carimbo.
-  logoTop: 224.1,
-  logoBottom: 242.9,
+  logoTop: 226.25,
+  logoBottom: 240.35,
   boxTop: 245.7,
   boxBottom: 289.2,
   boxX0: 351.0,
@@ -92,6 +92,13 @@ export const DRAWING = {
   specsGap: 8.5,
   /** Folga entre a base do desenho e o separador tracejado. */
   drawingGap: 14,
+  /**
+   * Fração da área da célula que o desenho ocupa. Preencher a célula inteira
+   * deixa a representação pesada demais para a folha; 0,72 reproduz a
+   * proporção do pixelmap de referência, onde o painel usa cerca de dois
+   * terços da faixa disponível.
+   */
+  fillFactor: 0.72,
   scaleNoteSize: 2.6,
 } as const
 
