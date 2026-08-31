@@ -77,7 +77,8 @@ export interface PanelRegion {
   id: string
   name: string
   cells: string[]
-  color: string
+  /** `null` enquanto nenhuma cor for atribuída: o painel nasce incolor. */
+  color: string | null
 }
 
 /** Cores sugeridas para painéis e repartições. */

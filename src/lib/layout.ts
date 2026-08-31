@@ -252,6 +252,7 @@ function drawPanelCell(
   const regions = derivedRegions(panel, m)
   const regionOf = new Map<string, string>()
   for (const region of regions) {
+    if (!region.color) continue
     for (const key of region.cells) regionOf.set(key, region.color)
   }
   const fillFor = (c: number, r: number) => {
@@ -290,11 +291,13 @@ function drawPanelCell(
     const set = new Set(region.cells)
     const inside = (c: number, r: number) =>
       set.has(cellKey(c, r)) && hasPlate(panel, c, r)
+    // Sem cor atribuída, a divisão sai no traço neutro do desenho.
+    const divider = region.color ?? COLORS.navy
     for (const seg of outlineOf(m, inside)) {
       prims.push({
         kind: 'line', layer: LAYERS.panel,
         x1: px(seg.x1), y1: py(seg.y1), x2: px(seg.x2), y2: py(seg.y2),
-        color: region.color, width: 0.45, dashed: true,
+        color: divider, width: 0.45, dashed: true,
       })
     }
     const rm = regionMetrics(m, region)
@@ -311,7 +314,7 @@ function drawPanelCell(
           py(m.rowEdgesMm[r0]) + 3.4 * clamp(k, 0.7, 1),
           label,
           clamp(2.8 * k, 1.9, 2.8),
-          region.color,
+          divider,
           { bold: true },
         ),
       )
@@ -437,7 +440,10 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
       if (regions.length > 1) {
         for (const region of regions) {
           const label = region.name.trim().toUpperCase()
-          if (label) legendEntries.push({ color: region.color, label: `${name} · ${label}`, sub: true })
+          // Só entra na legenda a parte que tem cor de fato.
+          if (label && region.color) {
+            legendEntries.push({ color: region.color, label: `${name} · ${label}`, sub: true })
+          }
         }
       }
     })

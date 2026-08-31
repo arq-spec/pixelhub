@@ -436,6 +436,8 @@ body {
 }
 .region.is-active { border-color: var(--accent-2); box-shadow: 0 0 0 1px var(--accent-2); }
 .region__dot { display: block; width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; }
+/* Repartição sem cor atribuída. */
+.region__dot.is-none { border: 1px dashed var(--muted); background: none; }
 .region__name {
   flex: 1; min-width: 0; width: 100%;
   padding: 3px 5px; background: var(--bg-3);

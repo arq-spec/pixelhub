@@ -412,7 +412,10 @@ function ShapeAndRegions({
             const rm = regionMetrics(m, r)
             return (
               <div key={r.id} className="region">
-                <span className="region__dot" style={{ background: r.color }} />
+                <span
+                  className={`region__dot${r.color ? '' : ' is-none'}`}
+                  style={r.color ? { background: r.color } : undefined}
+                />
                 <input
                   className="region__name"
                   value={r.name}
@@ -428,11 +431,10 @@ function ShapeAndRegions({
                 </span>
                 <ColorPicker
                   value={r.color}
-                  allowNone={false}
                   onChange={(color) =>
                     dispatch({
                       type: 'styleRegion', panelId: panel.id, anchor: r.id,
-                      patch: { color: color ?? r.color },
+                      patch: { color: color ?? undefined },
                     })
                   }
                 />

@@ -1,7 +1,6 @@
 import {
   PITCHES,
   POWER_KVA_PER_M2,
-  REGION_COLORS,
   WEIGHT_KG_PER_M2,
   type PanelConfig,
   type PanelRegion,
@@ -331,12 +330,12 @@ export function derivedRegions(panel: PanelConfig, m: Metrics): PanelRegion[] {
         }
       }
 
-      const index = regions.length
       const style = panel.regionStyles[start] ?? {}
       regions.push({
         id: start,
-        name: style.name ?? `PARTE ${index + 1}`,
-        color: style.color ?? REGION_COLORS[index % REGION_COLORS.length],
+        name: style.name ?? `PARTE ${regions.length + 1}`,
+        // Sem cor até que o usuário escolha uma: a folha sai neutra.
+        color: style.color ?? null,
         cells,
       })
     }

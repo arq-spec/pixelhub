@@ -43,7 +43,10 @@ export function GridEditor({
   const cutSet = useMemo(() => new Set(panel.cuts), [panel.cuts])
   const colorOf = useMemo(() => {
     const map = new Map<string, string>()
-    for (const r of regions) for (const key of r.cells) map.set(key, r.color)
+    for (const r of regions) {
+      if (!r.color) continue
+      for (const key of r.cells) map.set(key, r.color)
+    }
     return map
   }, [regions])
 
