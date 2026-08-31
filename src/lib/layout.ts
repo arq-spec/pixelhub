@@ -12,7 +12,7 @@ import {
   STAMP,
 } from './sheetSpec'
 import {
-  cellKey, cellRects, computeMetrics, hasPlate, outlineOf, regionCellSet,
+  cellKey, cellRects, computeMetrics, derivedRegions, hasPlate, outlineOf,
   regionMetrics, runKinds, type Metrics,
 } from './calc'
 import { sheetPanels } from './store'
@@ -139,8 +139,8 @@ export function specLines(
     .map(([, l, v]) => [l, v] as [string, string])
 
   if (sheet.fields.reparticoes !== false) {
-    for (const region of panel.regions) {
-      const rm = regionMetrics(panel, m, region)
+    for (const region of derivedRegions(panel, m)) {
+      const rm = regionMetrics(m, region)
       if (!rm) continue
       lines.push([
         `${region.name.trim().toUpperCase() || 'PARTE'}:`,
@@ -249,8 +249,9 @@ function drawPanelCell(
   const py = (mm: number) => y + mm / den
 
   // Cor de fundo de cada posição: a da repartição, senão a do painel.
+  const regions = derivedRegions(panel, m)
   const regionOf = new Map<string, string>()
-  for (const region of panel.regions) {
+  for (const region of regions) {
     for (const key of region.cells) regionOf.set(key, region.color)
   }
   const fillFor = (c: number, r: number) => {
@@ -285,8 +286,8 @@ function drawPanelCell(
   }
 
   // Cada repartição é delimitada pelo seu próprio tracejado.
-  for (const region of panel.regions) {
-    const set = regionCellSet(region)
+  for (const region of regions) {
+    const set = new Set(region.cells)
     const inside = (c: number, r: number) =>
       set.has(cellKey(c, r)) && hasPlate(panel, c, r)
     for (const seg of outlineOf(m, inside)) {
@@ -296,9 +297,10 @@ function drawPanelCell(
         color: region.color, width: 0.45, dashed: true,
       })
     }
-    const rm = regionMetrics(panel, m, region)
+    const rm = regionMetrics(m, region)
     const label = region.name.trim().toUpperCase()
-    if (rm && label) {
+    // Uma repartição só, ou seja, painel sem divisão: não precisa de etiqueta.
+    if (rm && label && regions.length > 1) {
       // Etiqueta no canto superior esquerdo da envoltória da repartição.
       const bounds = [...set].map((key) => key.split(',').map(Number))
       const c0 = Math.min(...bounds.map((b) => b[0]))
@@ -431,9 +433,12 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
       if (!panel.showInLegend) return
       const name = panel.name.trim().toUpperCase() || 'PAINEL'
       if (panel.color) legendEntries.push({ color: panel.color, label: name })
-      for (const region of panel.regions) {
-        const label = region.name.trim().toUpperCase()
-        if (label) legendEntries.push({ color: region.color, label: `${name} · ${label}`, sub: true })
+      const regions = derivedRegions(panel, computeMetrics(panel))
+      if (regions.length > 1) {
+        for (const region of regions) {
+          const label = region.name.trim().toUpperCase()
+          if (label) legendEntries.push({ color: region.color, label: `${name} · ${label}`, sub: true })
+        }
       }
     })
   }

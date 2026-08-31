@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer } from 'react'
 import {
-  DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES, REGION_COLORS,
-  type FieldId, type PanelConfig, type PanelRegion, type Project, type Sheet,
+  DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES,
+  type FieldId, type PanelConfig, type Project, type RegionStyle, type Sheet,
 } from '../types'
 import { todayIso } from './format'
 import { DEFAULT_LOGO_DATA_URI } from './brandLogo'
@@ -44,7 +44,8 @@ export function makePanel(partial?: Partial<PanelConfig>): PanelConfig {
     moduleWMm: DEFAULT_MODULE_MM.w,
     moduleHMm: DEFAULT_MODULE_MM.h,
     removedCells: [],
-    regions: [],
+    cuts: [],
+    regionStyles: {},
     color: null,
     showInLegend: true,
     ...partial,
@@ -104,11 +105,11 @@ export type Action =
   | { type: 'togglePanel'; index: number; panelId: string; active: boolean }
   /** Liga ou desliga placas do painel (formato livre). */
   | { type: 'setCells'; panelId: string; cells: string[]; present: boolean }
-  | { type: 'addRegion'; panelId: string }
-  | { type: 'removeRegion'; panelId: string; regionId: string }
-  | { type: 'patchRegion'; panelId: string; regionId: string; patch: Partial<PanelRegion> }
-  /** Inclui ou retira posições de uma repartição. */
-  | { type: 'setRegionCells'; panelId: string; regionId: string; cells: string[]; inside: boolean }
+  /** Coloca ou tira linhas de corte, que definem as repartições. */
+  | { type: 'setCuts'; panelId: string; cuts: string[]; on: boolean }
+  | { type: 'clearCuts'; panelId: string }
+  /** Nome e cor de uma repartição, pela âncora. */
+  | { type: 'styleRegion'; panelId: string; anchor: string; patch: RegionStyle }
   | { type: 'clearOverrides' }
   | { type: 'load'; project: Project }
   | { type: 'reset' }
@@ -269,54 +270,27 @@ export function reducer(state: Project, action: Action): Project {
       }))
     }
 
-    case 'addRegion':
+    case 'setCuts': {
+      const cuts = new Set(action.cuts)
       return mapPanel(state, action.panelId, (p) => ({
         ...p,
-        regions: [
-          ...p.regions,
-          {
-            id: uid('r'),
-            name: `PARTE ${p.regions.length + 1}`,
-            cells: [],
-            color: REGION_COLORS[p.regions.length % REGION_COLORS.length],
-          },
-        ],
-      }))
-
-    case 'removeRegion':
-      return mapPanel(state, action.panelId, (p) => ({
-        ...p,
-        regions: p.regions.filter((r) => r.id !== action.regionId),
-      }))
-
-    case 'patchRegion':
-      return mapPanel(state, action.panelId, (p) => ({
-        ...p,
-        regions: p.regions.map((r) =>
-          r.id === action.regionId ? { ...r, ...action.patch } : r,
-        ),
-      }))
-
-    case 'setRegionCells': {
-      const cells = new Set(action.cells)
-      return mapPanel(state, action.panelId, (p) => ({
-        ...p,
-        regions: p.regions.map((r) => {
-          if (r.id !== action.regionId) {
-            // Uma posição pertence a uma repartição de cada vez.
-            return action.inside
-              ? { ...r, cells: r.cells.filter((key) => !cells.has(key)) }
-              : r
-          }
-          return {
-            ...r,
-            cells: action.inside
-              ? [...new Set([...r.cells, ...action.cells])]
-              : r.cells.filter((key) => !cells.has(key)),
-          }
-        }),
+        cuts: action.on
+          ? [...new Set([...p.cuts, ...action.cuts])]
+          : p.cuts.filter((key) => !cuts.has(key)),
       }))
     }
+
+    case 'clearCuts':
+      return mapPanel(state, action.panelId, (p) => ({ ...p, cuts: [], regionStyles: {} }))
+
+    case 'styleRegion':
+      return mapPanel(state, action.panelId, (p) => ({
+        ...p,
+        regionStyles: {
+          ...p.regionStyles,
+          [action.anchor]: { ...p.regionStyles[action.anchor], ...action.patch },
+        },
+      }))
 
     case 'togglePanel':
       return mapSheet(state, action.index, (s) => ({
@@ -340,6 +314,43 @@ export function reducer(state: Project, action: Action): Project {
   }
 }
 
+/** Painel como pode vir do armazenamento, incluindo os formatos anteriores. */
+type StoredPanelShape = Partial<PanelConfig> & {
+  regions?: Array<{ id?: string; name?: string; color?: string; cells?: string[] }>
+}
+
+/**
+ * Converte as repartições pintadas do formato anterior em linhas de corte:
+ * onde duas placas vizinhas pertenciam a partes diferentes, nasce um corte.
+ * As divisões desenhadas continuam valendo depois da mudança de modelo.
+ */
+function migratePanel(stored: StoredPanelShape): StoredPanelShape {
+  const legacy = stored.regions
+  if (!Array.isArray(legacy) || !legacy.length || stored.cuts) return stored
+
+  const owner = new Map<string, string>()
+  for (const region of legacy) {
+    for (const key of region.cells ?? []) owner.set(key, region.id ?? region.name ?? '')
+  }
+  const cuts = new Set<string>()
+  const styles: Record<string, RegionStyle> = { ...(stored.regionStyles ?? {}) }
+  for (const [key, id] of owner) {
+    const [c, r] = key.split(',').map(Number)
+    if (owner.get(`${c},${r - 1}`) !== id && owner.has(`${c},${r - 1}`)) cuts.add(`h${c},${r}`)
+    if (owner.get(`${c - 1},${r}`) !== id && owner.has(`${c - 1},${r}`)) cuts.add(`v${c},${r}`)
+  }
+  // O nome e a cor seguem para a âncora da parte, que é a placa superior esquerda.
+  for (const region of legacy) {
+    const cells = (region.cells ?? []).slice().sort((a, b) => {
+      const [ca, ra] = a.split(',').map(Number)
+      const [cb, rb] = b.split(',').map(Number)
+      return ra - rb || ca - cb
+    })
+    if (cells.length) styles[cells[0]] = { name: region.name, color: region.color }
+  }
+  return { ...stored, cuts: [...cuts], regionStyles: styles }
+}
+
 /** Assinatura de conteúdo de um painel, para unificar duplicatas na migração. */
 const panelKey = (p: Omit<PanelConfig, 'id'> & { id?: string }) =>
   [p.name, p.widthMm, p.heightMm, p.pitch, p.moduleWMm, p.moduleHMm].join('|')
@@ -355,7 +366,7 @@ const panelKey = (p: Omit<PanelConfig, 'id'> & { id?: string }) =>
  */
 export function hydrate(raw: unknown): Project | null {
   if (!raw || typeof raw !== 'object') return null
-  type StoredPanel = Partial<PanelConfig>
+  type StoredPanel = StoredPanelShape
   type StoredSheet = Omit<Partial<Sheet>, 'activePanelIds'> & {
     panel?: StoredPanel
     panels?: StoredPanel[]
@@ -369,12 +380,12 @@ export function hydrate(raw: unknown): Project | null {
   if (!Array.isArray(data.sheets) || data.sheets.length === 0) return null
   const base = makeProject()
 
-  const catalog: PanelConfig[] = (data.panels ?? []).map((p) => makePanel(p))
+  const catalog: PanelConfig[] = (data.panels ?? []).map((p) => makePanel(migratePanel(p)))
   const byKey = new Map(catalog.map((p) => [panelKey(p), p.id]))
 
   /** Devolve o id do painel no catálogo, criando a entrada se preciso. */
   const adopt = (stored: StoredPanel): string => {
-    const panel = makePanel(stored)
+    const panel = makePanel(migratePanel(stored))
     const key = panelKey(panel)
     const existing = byKey.get(key)
     if (existing) return existing

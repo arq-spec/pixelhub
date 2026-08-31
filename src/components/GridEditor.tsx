@@ -1,92 +1,99 @@
-import { useEffect, useMemo, useState, type Dispatch } from 'react'
-import type { PanelConfig, PanelRegion } from '../types'
+import { useMemo, useState, type Dispatch } from 'react'
+import type { PanelConfig } from '../types'
 import type { Action } from '../lib/store'
-import { cellKey, computeMetrics, hasPlate } from '../lib/calc'
+import {
+  cellKey, computeMetrics, cutAbove, cutLeft, derivedRegions, hasPlate,
+} from '../lib/calc'
 import { tint } from '../lib/layout'
 
-export type GridMode = 'plates' | 'region'
+export type GridMode = 'plates' | 'cuts'
 
-const MIN_PX = 7
-const MAX_PX = 40
-
-/** Todas as posições do retângulo entre dois cantos. */
-function rectCells(a: [number, number], b: [number, number]): string[] {
-  const [c0, c1] = a[0] <= b[0] ? [a[0], b[0]] : [b[0], a[0]]
-  const [r0, r1] = a[1] <= b[1] ? [a[1], b[1]] : [b[1], a[1]]
-  const out: string[] = []
-  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) out.push(cellKey(c, r))
-  return out
-}
+const MIN_PX = 8
+const MAX_PX = 44
 
 /**
- * Grade clicável do painel: define onde há placa e quais posições compõem cada
- * repartição.
+ * Grade do painel.
  *
- * Clicar age numa posição, arrastar age no retângulo percorrido e as réguas de
- * coluna e linha agem na faixa inteira — o que importa em painéis largos, onde
- * a operação comum é abrir um vão de dezenas de colunas.
+ * Em *Placas* define-se onde há painel; em *Divisões*, clicar sobre a linha
+ * entre duas placas corta o painel ali. A primeira vez o corte atravessa a
+ * grade de ponta a ponta — é a divisão reta que a folha mostra tracejada;
+ * clicar de novo sobre um trecho já cortado remove só aquele trecho.
+ *
+ * As repartições não são desenhadas à mão: são o que sobra quando os cortes
+ * separam as placas.
  */
 export function GridEditor({
-  panel, mode, onModeChange, regions, activeRegionId, onPickRegion, dispatch, expanded,
+  panel, mode, onModeChange, dispatch, expanded,
 }: {
   panel: PanelConfig
   mode: GridMode
   onModeChange: (m: GridMode) => void
-  regions: PanelRegion[]
-  activeRegionId: string | null
-  onPickRegion: (id: string) => void
   dispatch: Dispatch<Action>
-  /** Em tela cheia a grade abre maior e com mais folga. */
   expanded?: boolean
 }) {
   const m = useMemo(() => computeMetrics(panel), [panel])
+  const regions = useMemo(() => derivedRegions(panel, m), [panel, m])
   const cols = m.cols.total
   const rows = m.rows.total
 
   const [cellPx, setCellPx] = useState(() =>
-    Math.max(MIN_PX, Math.min(expanded ? 30 : 20, Math.floor((expanded ? 1000 : 250) / Math.max(cols, 1)))),
+    Math.max(MIN_PX, Math.min(expanded ? 32 : 22, Math.floor((expanded ? 1050 : 260) / Math.max(cols, 1)))),
   )
-  const [drag, setDrag] = useState<{ from: [number, number]; to: [number, number] } | null>(null)
 
-  // Soltar o ponteiro fora da grade encerra o arrasto em vez de deixá-lo presa.
-  useEffect(() => {
-    if (!drag) return
-    const end = () => setDrag(null)
-    window.addEventListener('pointerup', end)
-    return () => window.removeEventListener('pointerup', end)
-  }, [drag])
-
-  const region = regions.find((r) => r.id === activeRegionId) ?? null
-  const regionOf = useMemo(() => {
+  const cutSet = useMemo(() => new Set(panel.cuts), [panel.cuts])
+  const colorOf = useMemo(() => {
     const map = new Map<string, string>()
     for (const r of regions) for (const key of r.cells) map.set(key, r.color)
     return map
   }, [regions])
 
-  const preview = drag ? new Set(rectCells(drag.from, drag.to)) : null
+  const setCuts = (cuts: string[], on: boolean) =>
+    dispatch({ type: 'setCuts', panelId: panel.id, cuts, on })
 
-  /** Aplica o modo corrente a um conjunto de posições, guiado pela primeira. */
-  const applyCells = (cells: string[], anchor: [number, number]) => {
-    if (mode === 'plates') {
-      const present = !hasPlate(panel, anchor[0], anchor[1])
-      dispatch({ type: 'setCells', panelId: panel.id, cells, present })
+  /**
+   * Corte horizontal na aresta superior da linha `row`. Se aquele trecho ainda
+   * não está cortado, corta a linha inteira; se está, tira só o trecho.
+   */
+  const toggleH = (col: number, row: number) => {
+    if (cutSet.has(cutAbove(col, row))) {
+      setCuts([cutAbove(col, row)], false)
       return
     }
-    if (!region) return
-    const inside = !region.cells.includes(cellKey(anchor[0], anchor[1]))
-    dispatch({ type: 'setRegionCells', panelId: panel.id, regionId: region.id, cells, inside })
+    setCuts(Array.from({ length: cols }, (_, c) => cutAbove(c, row)), true)
   }
 
-  const applyRect = (from: [number, number], to: [number, number]) =>
-    applyCells(rectCells(from, to), from)
+  const toggleV = (col: number, row: number) => {
+    if (cutSet.has(cutLeft(col, row))) {
+      setCuts([cutLeft(col, row)], false)
+      return
+    }
+    setCuts(Array.from({ length: rows }, (_, r) => cutLeft(col, r)), true)
+  }
 
-  const applyColumn = (c: number) => applyRect([c, 0], [c, rows - 1])
-  const applyRow = (r: number) => applyRect([0, r], [cols - 1, r])
+  const togglePlate = (col: number, row: number) =>
+    dispatch({
+      type: 'setCells', panelId: panel.id,
+      cells: [cellKey(col, row)], present: !hasPlate(panel, col, row),
+    })
 
-  const gutter = Math.max(13, Math.min(20, cellPx))
+  const setLine = (cells: string[], present: boolean) =>
+    dispatch({ type: 'setCells', panelId: panel.id, cells, present })
+
+  /** A régua age na coluna ou na linha inteira. */
+  const applyColumn = (c: number) => {
+    const cells = Array.from({ length: rows }, (_, r) => cellKey(c, r))
+    setLine(cells, !hasPlate(panel, c, 0))
+  }
+  const applyRow = (r: number) => {
+    const cells = Array.from({ length: cols }, (_, c) => cellKey(c, r))
+    setLine(cells, !hasPlate(panel, 0, r))
+  }
+
+  const gutter = Math.max(14, Math.min(20, cellPx))
   const w = gutter + cols * cellPx
   const h = gutter + rows * cellPx
-  const tick = Math.max(6, Math.min(9, cellPx * 0.55))
+  const tick = Math.max(6, Math.min(9, cellPx * 0.5))
+  const grab = Math.max(5, Math.min(9, cellPx * 0.45))
 
   return (
     <div className="grided">
@@ -101,11 +108,19 @@ export function GridEditor({
           </button>
           <button
             type="button"
-            className={`chip${mode === 'region' ? ' is-on' : ''}`}
-            onClick={() => onModeChange('region')}
+            className={`chip${mode === 'cuts' ? ' is-on' : ''}`}
+            onClick={() => onModeChange('cuts')}
           >
-            Repartições
+            Divisões
           </button>
+          {panel.cuts.length ? (
+            <button
+              type="button" className="chip"
+              onClick={() => dispatch({ type: 'clearCuts', panelId: panel.id })}
+            >
+              Limpar divisões
+            </button>
+          ) : null}
         </div>
         <div className="grided__zoom">
           <button
@@ -124,32 +139,14 @@ export function GridEditor({
         </div>
       </div>
 
-      {mode === 'region' && regions.length ? (
-        <div className="grided__regions">
-          {regions.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              className={`rpill${r.id === activeRegionId ? ' is-on' : ''}`}
-              onClick={() => onPickRegion(r.id)}
-            >
-              <span className="rpill__dot" style={{ background: r.color }} />
-              {r.name || 'PARTE'}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       <div className={`grided__scroll${expanded ? ' is-expanded' : ''}`}>
         <svg className="grided__svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-          {/* Réguas: clicar age na coluna ou na linha inteira. */}
+          {/* Réguas: agem na coluna ou na linha inteira. */}
           {Array.from({ length: cols }, (_, c) => (
             <g key={`c${c}`} className="grided__ruler" onClick={() => applyColumn(c)}>
               <rect x={gutter + c * cellPx} y={0} width={cellPx} height={gutter} />
               {cellPx >= 14 || c % 5 === 0 ? (
-                <text x={gutter + c * cellPx + cellPx / 2} y={gutter - 4} fontSize={tick}>
-                  {c + 1}
-                </text>
+                <text x={gutter + c * cellPx + cellPx / 2} y={gutter - 4} fontSize={tick}>{c + 1}</text>
               ) : null}
             </g>
           ))}
@@ -157,61 +154,101 @@ export function GridEditor({
             <g key={`r${r}`} className="grided__ruler" onClick={() => applyRow(r)}>
               <rect x={0} y={gutter + r * cellPx} width={gutter} height={cellPx} />
               {cellPx >= 14 || r % 5 === 0 ? (
-                <text x={gutter / 2} y={gutter + r * cellPx + cellPx / 2 + tick / 3} fontSize={tick}>
-                  {r + 1}
-                </text>
+                <text x={gutter / 2} y={gutter + r * cellPx + cellPx / 2 + tick / 3} fontSize={tick}>{r + 1}</text>
               ) : null}
             </g>
           ))}
 
+          {/* Placas */}
           {Array.from({ length: rows }, (_, r) =>
             Array.from({ length: cols }, (_, c) => {
-              const key = cellKey(c, r)
               const present = hasPlate(panel, c, r)
-              const color = regionOf.get(key) ?? panel.color
-              const inPreview = preview?.has(key)
+              const color = colorOf.get(cellKey(c, r)) ?? panel.color
               return (
                 <rect
-                  key={key}
-                  className="grided__cell"
+                  key={cellKey(c, r)}
+                  className={mode === 'plates' ? 'grided__cell' : 'grided__cell is-locked'}
                   x={gutter + c * cellPx} y={gutter + r * cellPx}
                   width={cellPx} height={cellPx}
                   fill={present ? (color ? tint(color, 0.68) : '#dfe7f1') : '#1b2430'}
-                  stroke={inPreview ? '#4c8dff' : '#7d8ba0'}
-                  strokeWidth={inPreview ? 1.8 : 0.4}
-                  onPointerDown={() => setDrag({ from: [c, r], to: [c, r] })}
-                  onPointerEnter={() => setDrag((d) => (d ? { ...d, to: [c, r] } : null))}
-                  onPointerUp={() => {
-                    if (drag) applyRect(drag.from, [c, r])
-                    setDrag(null)
-                  }}
+                  stroke="#7d8ba0" strokeWidth={0.4}
+                  onClick={mode === 'plates' ? () => togglePlate(c, r) : undefined}
                 />
               )
             }),
           )}
+
+          {/* Cortes já colocados */}
+          {panel.cuts.map((key) => {
+            const horizontal = key.startsWith('h')
+            const [c, r] = key.slice(1).split(',').map(Number)
+            const x = gutter + c * cellPx
+            const y = gutter + r * cellPx
+            return horizontal ? (
+              <line
+                key={key} className="grided__cut"
+                x1={x} y1={y} x2={x + cellPx} y2={y}
+              />
+            ) : (
+              <line
+                key={key} className="grided__cut"
+                x1={x} y1={y} x2={x} y2={y + cellPx}
+              />
+            )
+          })}
+
+          {/* Alvos de clique sobre as linhas internas da grade */}
+          {mode === 'cuts' ? (
+            <g className="grided__edges">
+              {Array.from({ length: rows - 1 }, (_, i) =>
+                Array.from({ length: cols }, (_, c) => (
+                  <rect
+                    key={`eh${c},${i + 1}`}
+                    x={gutter + c * cellPx} y={gutter + (i + 1) * cellPx - grab / 2}
+                    width={cellPx} height={grab}
+                    onClick={() => toggleH(c, i + 1)}
+                  />
+                )),
+              )}
+              {Array.from({ length: cols - 1 }, (_, i) =>
+                Array.from({ length: rows }, (_, r) => (
+                  <rect
+                    key={`ev${i + 1},${r}`}
+                    x={gutter + (i + 1) * cellPx - grab / 2} y={gutter + r * cellPx}
+                    width={grab} height={cellPx}
+                    onClick={() => toggleV(i + 1, r)}
+                  />
+                )),
+              )}
+            </g>
+          ) : null}
         </svg>
       </div>
 
-      <RangeApply cols={cols} rows={rows} onApply={applyRect} disabled={mode === 'region' && !region} />
+      <RangeApply
+        cols={cols} rows={rows}
+        onApply={(from, to) => {
+          const cells: string[] = []
+          for (let r = from[1]; r <= to[1]; r++) for (let c = from[0]; c <= to[0]; c++) cells.push(cellKey(c, r))
+          setLine(cells, !hasPlate(panel, from[0], from[1]))
+        }}
+        disabled={mode !== 'plates'}
+      />
 
       <p className="grided__hint">
         {mode === 'plates'
-          ? 'Clique para tirar ou repor a placa; arraste para um trecho. Os números agem na coluna ou linha inteira.'
-          : region
-            ? `Pintando ${region.name || 'a repartição'}. Clique, arraste ou use os números das réguas.`
-            : 'Crie uma repartição para começar a pintar.'}
+          ? 'Clique numa placa para tirá-la ou repô-la. Os números das réguas agem na coluna ou linha inteira.'
+          : 'Clique sobre a linha entre duas placas para dividir o painel ali — o corte atravessa a grade. Clicar num trecho já cortado remove só aquele trecho.'}
       </p>
       <p className="grided__count">
-        {m.activeCount} de {cols * rows} placas · {cols}×{rows} posições
+        {m.activeCount} de {cols * rows} placas · {regions.length}{' '}
+        {regions.length === 1 ? 'repartição' : 'repartições'}
       </p>
     </div>
   )
 }
 
-/**
- * Seleção por intervalo. Em painéis largos digitar "colunas 3 a 46" é mais
- * rápido e mais exato do que arrastar sobre dezenas de células.
- */
+/** Seleção por intervalo, para painéis largos onde mirar não é prático. */
 function RangeApply({
   cols, rows, onApply, disabled,
 }: {
@@ -227,6 +264,8 @@ function RangeApply({
 
   const clampCol = (v: number) => Math.max(1, Math.min(cols, Math.round(v) || 1))
   const clampRow = (v: number) => Math.max(1, Math.min(rows, Math.round(v) || 1))
+
+  if (disabled) return null
 
   return (
     <div className="range">
@@ -244,10 +283,13 @@ function RangeApply({
         <input type="number" value={r1} min={1} max={rows} onChange={(e) => setR1(clampRow(+e.target.value))} />
       </span>
       <button
-        type="button"
-        className="chip"
-        disabled={disabled}
-        onClick={() => onApply([c0 - 1, r0 - 1], [c1 - 1, r1 - 1])}
+        type="button" className="chip"
+        onClick={() =>
+          onApply(
+            [Math.min(c0, c1) - 1, Math.min(r0, r1) - 1],
+            [Math.max(c0, c1) - 1, Math.max(r0, r1) - 1],
+          )
+        }
       >
         Aplicar
       </button>

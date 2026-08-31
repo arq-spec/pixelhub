@@ -50,11 +50,14 @@ processador enxerga o painel.
   escada, vão central ou qualquer recorte. A linha `PAINEL:` continua mostrando a envoltória, mas
   **área, peso e consumo passam a contar só as placas presentes** — um pórtico
   de 8,00×4,50 m com vão central tem 18 m², não 36.
-- **Repartições** — trechos do painel que recebem sinal ou arte própria. Cada
-  um tem nome, cor e um contorno tracejado no desenho, e entra no quadro de
-  dados com a sua envoltória e resolução: `PARTE 1: 8,00x1,50m · 2688x504p`.
-  Uma placa pertence a uma repartição por vez, e a repartição é um conjunto de
-  posições — logo comporta formas em L, não só retângulos.
+- **Repartições** — não se desenham à mão: em *Divisões*, clicar sobre a linha
+  entre duas placas corta o painel ali, e o corte atravessa a grade de ponta a
+  ponta. As repartições são o que sobra quando os cortes separam as placas, de
+  modo que num pórtico um único clique já devolve três partes — o vão central
+  separa as duas pernas por si só. Clicar num trecho já cortado remove só
+  aquele trecho, para divisões parciais. Cada parte recebe nome e cor e entra
+  no quadro de dados com envoltória e resolução:
+  `PARTE 1: 8,00x1,50m · 2688x504p`.
 - **Cores** — o painel e cada repartição aceitam cor, da paleta sugerida ou
   livre. As placas saem com a cor esmaecida e o contorno na cor cheia. Um
   campo na folha lista, no quadro de legendas, a cor seguida do painel e das

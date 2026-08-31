@@ -5,7 +5,7 @@ import {
 } from '../types'
 import { GridEditor, type GridMode } from './GridEditor'
 import { sheetPanels, syncPitchNote, type Action } from '../lib/store'
-import { computeMetrics, regionMetrics, snapToModule, type Metrics } from '../lib/calc'
+import { computeMetrics, derivedRegions, regionMetrics, snapToModule, type Metrics } from '../lib/calc'
 import { meters, num } from '../lib/format'
 import { Button, Field, NumberInput, Section, TextInput, Toggle } from './ui'
 
@@ -345,33 +345,18 @@ function ShapeAndRegions({
   panel, m, dispatch,
 }: { panel: PanelConfig; m: Metrics; dispatch: Dispatch<Action> }) {
   const [mode, setMode] = useState<GridMode>('plates')
-  const [pickedRegionId, setPickedRegionId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const setPanel = (patch: Partial<PanelConfig>) =>
     dispatch({ type: 'patchPanel', panelId: panel.id, patch })
 
-  // Nunca ficar em "nenhuma repartição selecionada" havendo repartições: a
-  // última criada assume, senão criar uma e clicar na grade não faria nada.
-  const region =
-    panel.regions.find((r) => r.id === pickedRegionId) ??
-    panel.regions[panel.regions.length - 1] ??
-    null
-
-  const addRegion = () => {
-    dispatch({ type: 'addRegion', panelId: panel.id })
-    // O id nasce no reducer; a seleção cai na última pela regra acima.
-    setPickedRegionId(null)
-    setMode('region')
-  }
+  // As repartições saem dos cortes; a lista abaixo só dá nome e cor a elas.
+  const regions = derivedRegions(panel, m)
 
   const editor = (
     <GridEditor
       panel={panel}
       mode={mode}
       onModeChange={setMode}
-      regions={panel.regions}
-      activeRegionId={region?.id ?? null}
-      onPickRegion={setPickedRegionId}
       dispatch={dispatch}
       expanded={expanded}
     />
@@ -418,63 +403,49 @@ function ShapeAndRegions({
         </Field>
       </div>
 
-      <div className="regions">
-        <div className="regions__head">
-          <span>Repartições ({panel.regions.length})</span>
-          <Button onClick={addRegion}>+ Repartição</Button>
-        </div>
-
-        {panel.regions.map((r) => {
-          const rm = regionMetrics(panel, m, r)
-          const isActive = r.id === region?.id
-          return (
-            <div key={r.id} className={`region${isActive ? ' is-active' : ''}`}>
-              <button
-                type="button"
-                className="region__pick"
-                title="Pintar esta repartição na grade"
-                onClick={() => {
-                  setPickedRegionId(r.id)
-                  setMode('region')
-                }}
-              >
+      {regions.length > 1 ? (
+        <div className="regions">
+          <div className="regions__head">
+            <span>Repartições ({regions.length})</span>
+          </div>
+          {regions.map((r) => {
+            const rm = regionMetrics(m, r)
+            return (
+              <div key={r.id} className="region">
                 <span className="region__dot" style={{ background: r.color }} />
-              </button>
-              <input
-                className="region__name"
-                value={r.name}
-                onChange={(e) =>
-                  dispatch({
-                    type: 'patchRegion', panelId: panel.id, regionId: r.id,
-                    patch: { name: e.target.value },
-                  })
-                }
-              />
-              <span className="region__size">
-                {rm
-                  ? `${meters(rm.widthMm)}×${meters(rm.heightMm)}m · ${rm.pixelsW}×${rm.pixelsH}p`
-                  : 'sem placas'}
-              </span>
-              <ColorPicker
-                value={r.color}
-                allowNone={false}
-                onChange={(color) =>
-                  dispatch({
-                    type: 'patchRegion', panelId: panel.id, regionId: r.id,
-                    patch: { color: color ?? r.color },
-                  })
-                }
-              />
-              <Button
-                variant="icon" title="Excluir repartição"
-                onClick={() => dispatch({ type: 'removeRegion', panelId: panel.id, regionId: r.id })}
-              >
-                ✕
-              </Button>
-            </div>
-          )
-        })}
-      </div>
+                <input
+                  className="region__name"
+                  value={r.name}
+                  onChange={(e) =>
+                    dispatch({
+                      type: 'styleRegion', panelId: panel.id, anchor: r.id,
+                      patch: { name: e.target.value },
+                    })
+                  }
+                />
+                <span className="region__size">
+                  {rm ? `${meters(rm.widthMm)}×${meters(rm.heightMm)}m · ${rm.pixelsW}×${rm.pixelsH}p` : '—'}
+                </span>
+                <ColorPicker
+                  value={r.color}
+                  allowNone={false}
+                  onChange={(color) =>
+                    dispatch({
+                      type: 'styleRegion', panelId: panel.id, anchor: r.id,
+                      patch: { color: color ?? r.color },
+                    })
+                  }
+                />
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="hint">
+          Sem divisões: o painel é uma peça só. Em <strong>Divisões</strong>, clique sobre a
+          linha entre duas placas para reparti-lo.
+        </p>
+      )}
     </div>
   )
 }

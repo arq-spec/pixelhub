@@ -1,6 +1,7 @@
 import {
   PITCHES,
   POWER_KVA_PER_M2,
+  REGION_COLORS,
   WEIGHT_KG_PER_M2,
   type PanelConfig,
   type PanelRegion,
@@ -221,9 +222,6 @@ export function snapToModule(sizeMm: number, moduleMm: number): number {
 }
 
 
-/** Posições de uma repartição, como conjunto para consulta rápida. */
-export const regionCellSet = (region: PanelRegion) => new Set(region.cells)
-
 export interface CellRect { col: number; row: number; x0: number; y0: number; x1: number; y1: number }
 
 /** Retângulos das posições que satisfazem `keep`, em mm a partir da origem. */
@@ -284,24 +282,80 @@ export interface RegionMetrics {
   plates: number
 }
 
-/** Medidas de uma repartição: envoltória em metros e resolução. */
-export function regionMetrics(
-  panel: PanelConfig, m: Metrics, region: PanelRegion,
-): RegionMetrics | null {
-  const set = regionCellSet(region)
-  let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity, plates = 0
+/** Chaves dos cortes que separam duas placas vizinhas. */
+export const cutAbove = (col: number, row: number) => `h${col},${row}`
+export const cutLeft = (col: number, row: number) => `v${col},${row}`
+
+/**
+ * Repartições do painel: os grupos de placas que sobram depois que as linhas
+ * de corte separam a grade. É uma busca em largura sobre as placas presentes,
+ * em que um corte bloqueia a passagem entre vizinhas.
+ *
+ * A âncora de cada grupo — a sua placa superior esquerda — dá a identidade
+ * usada para guardar nome e cor, de modo que renomear uma parte sobrevive a
+ * mexer nos cortes das outras.
+ */
+export function derivedRegions(panel: PanelConfig, m: Metrics): PanelRegion[] {
+  const cuts = new Set(panel.cuts)
+  const seen = new Set<string>()
+  const regions: PanelRegion[] = []
+
+  const linked = (c: number, r: number, nc: number, nr: number) => {
+    if (nr === r + 1) return !cuts.has(cutAbove(c, nr))
+    if (nr === r - 1) return !cuts.has(cutAbove(c, r))
+    if (nc === c + 1) return !cuts.has(cutLeft(nc, r))
+    return !cuts.has(cutLeft(c, r))
+  }
+
   for (let r = 0; r < m.rows.total; r++) {
     for (let c = 0; c < m.cols.total; c++) {
-      if (!set.has(cellKey(c, r)) || !hasPlate(panel, c, r)) continue
-      plates++
-      c0 = Math.min(c0, c); c1 = Math.max(c1, c)
-      r0 = Math.min(r0, r); r1 = Math.max(r1, r)
+      const start = cellKey(c, r)
+      if (seen.has(start) || !hasPlate(panel, c, r)) continue
+
+      const cells: string[] = []
+      const queue: Array<[number, number]> = [[c, r]]
+      seen.add(start)
+      while (queue.length) {
+        const [cc, rr] = queue.pop()!
+        cells.push(cellKey(cc, rr))
+        const around: Array<[number, number]> = [
+          [cc + 1, rr], [cc - 1, rr], [cc, rr + 1], [cc, rr - 1],
+        ]
+        for (const [nc, nr] of around) {
+          if (nc < 0 || nr < 0 || nc >= m.cols.total || nr >= m.rows.total) continue
+          const key = cellKey(nc, nr)
+          if (seen.has(key) || !hasPlate(panel, nc, nr)) continue
+          if (!linked(cc, rr, nc, nr)) continue
+          seen.add(key)
+          queue.push([nc, nr])
+        }
+      }
+
+      const index = regions.length
+      const style = panel.regionStyles[start] ?? {}
+      regions.push({
+        id: start,
+        name: style.name ?? `PARTE ${index + 1}`,
+        color: style.color ?? REGION_COLORS[index % REGION_COLORS.length],
+        cells,
+      })
     }
   }
-  if (!plates) return null
+  return regions
+}
 
-  const widthMm = m.colEdgesMm[c1 + 1] - m.colEdgesMm[c0]
-  const heightMm = m.rowEdgesMm[r1 + 1] - m.rowEdgesMm[r0]
+/** Medidas de uma repartição: envoltória em metros e resolução. */
+export function regionMetrics(
+  m: Metrics, region: PanelRegion,
+): RegionMetrics | null {
+  let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity
+  for (const key of region.cells) {
+    const [c, r] = key.split(',').map(Number)
+    c0 = Math.min(c0, c); c1 = Math.max(c1, c)
+    r0 = Math.min(r0, r); r1 = Math.max(r1, r)
+  }
+  if (!region.cells.length) return null
+
   const axisPixels = (a: number, b: number, edges: number[]) => {
     let sum = 0
     for (let i = a; i <= b; i++) {
@@ -312,10 +366,10 @@ export function regionMetrics(
 
   return {
     region,
-    widthMm,
-    heightMm,
+    widthMm: m.colEdgesMm[c1 + 1] - m.colEdgesMm[c0],
+    heightMm: m.rowEdgesMm[r1 + 1] - m.rowEdgesMm[r0],
     pixelsW: axisPixels(c0, c1, m.colEdgesMm),
     pixelsH: axisPixels(r0, r1, m.rowEdgesMm),
-    plates,
+    plates: region.cells.length,
   }
 }

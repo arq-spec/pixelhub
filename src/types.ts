@@ -45,26 +45,38 @@ export interface PanelConfig {
    * formato livre — pórtico, escada, vão central — dentro da mesma grade.
    */
   removedCells: string[]
-  /** Repartições de conteúdo do painel. */
-  regions: PanelRegion[]
+  /**
+   * Linhas de corte entre placas, que dividem o painel em repartições.
+   * `h<col>,<row>` corta acima da placa; `v<col>,<row>` corta à esquerda dela.
+   */
+  cuts: string[]
+  /** Nome e cor de cada repartição, por âncora (a placa superior esquerda). */
+  regionStyles: Record<string, RegionStyle>
   /** Cor de identificação do painel na folha. */
   color: string | null
   /** Lista este painel e suas cores no quadro de legendas. */
   showInLegend: boolean
 }
 
+/** Rótulo e cor que o usuário deu a uma repartição. */
+export interface RegionStyle {
+  name?: string
+  color?: string
+}
+
 /**
  * Uma repartição de conteúdo: o trecho do painel que recebe um sinal ou uma
- * peça de arte própria. É um conjunto de posições, não um retângulo, então
- * comporta recortes em L, pórticos e vãos.
+ * peça de arte própria.
+ *
+ * Não é editada diretamente — é o que sobra quando as linhas de corte separam
+ * as placas. Um corte reto no meio de um pórtico já devolve três repartições,
+ * porque o vão central separa as duas pernas por si só.
  */
 export interface PanelRegion {
+  /** Âncora: a placa superior esquerda, que dá identidade estável à parte. */
   id: string
-  /** Nome impresso na folha, ex.: "PARTE 1". */
   name: string
-  /** Posições que compõem a repartição, como "coluna,linha". */
   cells: string[]
-  /** Cor do contorno tracejado e do preenchimento. */
   color: string
 }
 

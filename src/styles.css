@@ -379,6 +379,15 @@ body {
   fill: #8d9bad; text-anchor: middle; font-family: inherit; pointer-events: none;
 }
 
+.grided__cell.is-locked { cursor: default; }
+
+/* A linha de corte é a divisão do painel — mesmo tracejado vermelho da folha. */
+.grided__cut {
+  stroke: #ff5348; stroke-width: 2.4; stroke-dasharray: 5 3; pointer-events: none;
+}
+.grided__edges rect { fill: transparent; cursor: pointer; }
+.grided__edges rect:hover { fill: rgba(255, 83, 72, .55); }
+
 /* ------------------------------------------------- seleção por intervalo */
 .range {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
@@ -426,8 +435,7 @@ body {
   background: var(--bg-2);
 }
 .region.is-active { border-color: var(--accent-2); box-shadow: 0 0 0 1px var(--accent-2); }
-.region__pick { padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
-.region__dot { display: block; width: 13px; height: 13px; border-radius: 3px; }
+.region__dot { display: block; width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; }
 .region__name {
   flex: 1; min-width: 0; width: 100%;
   padding: 3px 5px; background: var(--bg-3);
