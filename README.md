@@ -65,6 +65,21 @@ Tela, PDF, SVG e DXF são gerados a partir do mesmo modelo geométrico
 (`src/lib/layout.ts`), então o que aparece na pré-visualização é o que sai no
 arquivo.
 
+## Publicação no GitHub Pages
+
+O repositório traz o workflow `.github/workflows/deploy.yml`: todo push na `main`
+constrói o projeto e publica no GitHub Pages, em
+
+**https://arq-spec.github.io/pixelhub/**
+
+A primeira execução tenta habilitar o Pages sozinha. Se o workflow parar com um
+erro de permissão, abra *Settings → Pages* e defina **Source: GitHub Actions** —
+depois é só reexecutar o workflow em *Actions*.
+
+O build usa caminhos relativos (`base: './'`), então a aplicação funciona no
+subdiretório do Pages sem ajuste. Servida de lá, ela roda inteiramente no
+navegador e **todos os formatos baixam normalmente**, DXF e `.zip` inclusive.
+
 ## Rodando
 
 ```bash
