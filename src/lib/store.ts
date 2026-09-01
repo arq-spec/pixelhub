@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer } from 'react'
 import {
   DEFAULT_FIELDS, DEFAULT_MODULE_MM, PITCHES,
   type FieldId, type PanelConfig, type Project, type RegionStyle, type Rig,
-  type RigItem, type RigKind, type Sheet,
+  type RigItem, type RigKind, type RigMark, type RigPoint, type Sheet,
 } from '../types'
 import { todayIso } from './format'
 import { DEFAULT_LOGO_DATA_URI } from './brandLogo'
@@ -80,7 +80,10 @@ export function makeRig(partial?: Partial<Rig>): Rig {
     items: [],
     view: 'isometrica',
     showGround: true,
-    showDimensions: true,
+    // A cota automática mede a montagem inteira e nem sempre é a medida que
+    // interessa. Quem cota é o desenhista, marcando os vértices.
+    showDimensions: false,
+    marks: [],
     ...partial,
   }
 }
@@ -148,6 +151,10 @@ export type Action =
   | { type: 'duplicateRigItem'; rigId: string; itemId: string }
   | { type: 'removeRigItem'; rigId: string; itemId: string }
   | { type: 'patchRigItem'; rigId: string; itemId: string; patch: Partial<RigItem> }
+  /** Cota marcada à mão, de vértice a vértice. */
+  | { type: 'addRigMark'; rigId: string; a: RigPoint; b: RigPoint }
+  | { type: 'removeRigMark'; rigId: string; markId: string }
+  | { type: 'clearRigMarks'; rigId: string }
   /** Liga ou desliga placas do painel (formato livre). */
   | { type: 'setCells'; panelId: string; cells: string[]; present: boolean }
   /** Coloca ou tira linhas de corte, que definem as repartições. */
@@ -428,10 +435,29 @@ export function reducer(state: Project, action: Action): Project {
         return { ...r, items }
       })
 
+    case 'addRigMark':
+      return mapRig(state, action.rigId, (r) => ({
+        ...r,
+        marks: [...r.marks, { id: uid('c'), a: action.a, b: action.b }],
+      }))
+
+    case 'removeRigMark':
+      return mapRig(state, action.rigId, (r) => ({
+        ...r,
+        marks: r.marks.filter((m) => m.id !== action.markId),
+      }))
+
+    case 'clearRigMarks':
+      return mapRig(state, action.rigId, (r) => ({ ...r, marks: [] }))
+
     case 'removeRigItem':
       return mapRig(state, action.rigId, (r) => ({
         ...r,
         items: r.items.filter((i) => i.id !== action.itemId),
+        // Cota presa à peça que saiu não tem mais o que medir.
+        marks: r.marks.filter(
+          (m) => m.a.itemId !== action.itemId && m.b.itemId !== action.itemId,
+        ),
       }))
 
     case 'patchRigItem':
@@ -537,7 +563,12 @@ export function hydrate(raw: unknown): Project | null {
   }
 
   const rigs = (data.rigs ?? []).map((r) =>
-    makeRig({ ...r, items: (r.items ?? []).map((i) => makeRigItem(i.kind ?? 'volume', i)) }),
+    makeRig({
+      ...r,
+      items: (r.items ?? []).map((i) => makeRigItem(i.kind ?? 'volume', i)),
+      // Montagens gravadas antes das cotas manuais não têm a lista.
+      marks: (r.marks ?? []).filter((m): m is RigMark => !!m?.a && !!m?.b),
+    }),
   )
   const sheets = data.sheets.map((s) => {
     const legacy = s.panels ?? (s.panel ? [s.panel] : [])

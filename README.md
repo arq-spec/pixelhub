@@ -90,19 +90,37 @@ processador enxerga o painel.
   também nasce ao lado do que já existe, nunca dentro da anterior.
 
   O **ambiente 3D** é uma sessão inteira, ao lado da folha técnica: as duas
-  ficam em abas no alto da área de desenho. Ele traz a paleta de peças, a
-  montagem em tamanho de tela, as cotas, o piso quadriculado de metro em metro
-  — que é o que dá noção de escala — e o cartão da peça selecionada sobre a
-  cena. A vista gira arrastando o fundo, desliza com *Shift*, aproxima na roda
-  e volta ao enquadramento com um botão. Com uma peça selecionada, as setas a
+  ficam em abas no alto da área de desenho, e a coluna da direita segue a aba
+  aberta — no ambiente ela fala da montagem, das cotas e das peças, e os
+  controles da prancha saem da frente. Ele traz a paleta de peças, a montagem
+  em tamanho de tela, o piso quadriculado de metro em metro — que é o que dá
+  noção de escala — e, sobre a cena, um cartão curto com o X, Y e Z da peça
+  selecionada; as medidas inteiras ficam na coluna, que já é da montagem.
+  A vista gira arrastando o fundo, desliza com *Shift*, aproxima na roda e
+  volta ao enquadramento com um botão. Com uma peça selecionada, as setas a
   empurram de 5 em 5 cm (meio metro com *Shift*, altura com *Alt*) e *Delete* a
   remove. Arrastar move a peça no piso; com *Shift*, na altura. O enquadramento
   congela durante o arrasto, senão o desenho fugiria debaixo do cursor.
+  Selecionar de um lado marca do outro: é a mesma peça.
+
+  **Cotar é apanhar dois vértices.** Em *Cotar*, todo canto de peça vira ponto
+  apanhável; o que está sob o cursor se acende e uma linha guia sai do primeiro
+  ponto marcado. A cota fica presa às peças em que foi tirada — mover o
+  praticável leva a medida junto —, sai na folha junto com o desenho e some com
+  a peça que media. O lado da linha de cota é escolhido entre os seis sentidos
+  dos eixos, descartando os que correm junto com o trecho medido, e as marcas de
+  extremidade a 45° são o que a faz legível no meio do desenho.
+
+  A cotagem automática mede a montagem inteira e as alturas do painel e do
+  praticável. Ela continua disponível num interruptor, mas nasce **desligada**:
+  quase sempre a medida que interessa é outra.
 
   O fundo da tela é claro de propósito: a cena usa as mesmas cores da folha,
   então o que se vê no ambiente é o que sai impresso. A vista marcada nas
   abas — **isométrica, frontal, lateral ou superior** — é a que entra na folha,
-  ao lado dos painéis, com a envoltória da montagem no quadro.
+  ao lado dos painéis, com a envoltória da montagem no quadro. A vista não
+  anuncia escala, por ser isométrica e não uma projeção cotada em 1:50, então
+  ocupa a célula que tem em vez de travar numa escala normalizada.
 
   Numa vista frontal a tela não carrega profundidade, então lá o arrasto no
   piso só resolve a largura — a dica na interface avisa, para não parecer que
@@ -223,6 +241,7 @@ src/
       dxf.ts            primitivas -> DXF R12
   components/
     Studio3D.tsx        ambiente 3D: a montagem em tamanho de tela
-    RigEditor.tsx       montagens do projeto e as peças de cada uma
+    RigInspector.tsx    coluna da direita quando a aba é a do ambiente
+    RigEditor.tsx       montagens que a folha desenha
     ...                 demais telas de edição
 ```

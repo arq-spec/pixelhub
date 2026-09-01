@@ -1,4 +1,4 @@
-import type { PanelConfig, Project, Rig, RigItem } from '../types'
+import type { PanelConfig, Project, Rig, RigItem, RigPoint } from '../types'
 import { cellRects, computeMetrics, hasPlate, outlineOf } from './calc'
 import {
   box, depthPerZ, faceBounds, projectFaces, project as projectPoint, wedge, VIEWS,
@@ -216,6 +216,50 @@ export function rigBounds(faces: Face[]) {
 }
 
 
+/**
+ * Vértices distintos da montagem, com a peça a que cada um pertence.
+ *
+ * São os pontos que a marcação de cota oferece para apanhar. O piso fica de
+ * fora: ele é referência visual, não tem medida a dar.
+ */
+export function rigVertices(faces: Face[]): Array<{ p: Vec3; itemId: string }> {
+  const seen = new Set<string>()
+  const out: Array<{ p: Vec3; itemId: string }> = []
+  for (const f of faces) {
+    if (!f.itemId) continue
+    for (const p of f.pts) {
+      const key = `${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.z)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ p, itemId: f.itemId })
+    }
+  }
+  return out
+}
+
+/**
+ * Marcas de extremidade da linha de cota, a 45°.
+ *
+ * Sem elas a cota some no meio do desenho: um traço fino a mais entre tantos.
+ * É a convenção do desenho técnico, e resolve a leitura. Trabalha já no plano
+ * do desenho, depois da projeção, e serve à tela e à folha igualmente.
+ */
+export function endTicks(
+  a: { x: number; y: number }, b: { x: number; y: number }, size: number,
+): Array<[{ x: number; y: number }, { x: number; y: number }]> {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len = Math.hypot(dx, dy) || 1
+  // Direção da cota girada 45°, que é como a marca se inclina.
+  const k = Math.SQRT1_2 / len
+  const tx = (dx - dy) * k * size
+  const ty = (dx + dy) * k * size
+  return [
+    [{ x: a.x - tx, y: a.y - ty }, { x: a.x + tx, y: a.y + ty }],
+    [{ x: b.x - tx, y: b.y - ty }, { x: b.x + tx, y: b.y + ty }],
+  ]
+}
+
 /** Uma cota da montagem: o trecho medido e o rótulo. */
 export interface RigDim {
   a: Vec3
@@ -290,21 +334,88 @@ export function rigDimensions(project: Project, rig: Rig): RigDim[] {
   return dims
 }
 
+/** Medida em metros, no formato que a folha usa. */
+const meters = (mm: number) =>
+  `${(mm / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}m`
+
+/** Onde uma ponta de cota está agora: a peça pode ter se movido desde a marca. */
+export function markPoint(rig: Rig, p: RigPoint): Vec3 {
+  const item = p.itemId ? rig.items.find((i) => i.id === p.itemId) : null
+  if (!item) return { x: p.x, y: p.y, z: p.z }
+  return { x: item.x + p.x, y: item.y + p.y, z: item.z + p.z }
+}
+
 /**
- * As mesmas cotas, com o lado do deslocamento já resolvido pela projeção.
+ * Cotas marcadas à mão, de vértice a vértice.
+ *
+ * O lado da linha de cota é escolhido entre os seis sentidos dos eixos,
+ * descartando os que correm junto com o trecho medido — uma cota deitada sobre
+ * o que ela mede não se lê. Entre os que sobram, ganha o que mais afasta a
+ * linha do centro do desenho, a mesma regra das cotas automáticas.
+ */
+export function markDimensions(project: Project, rig: Rig, cam: Camera): RigDim[] {
+  if (!rig.marks.length) return []
+
+  const b = rigBounds(rigFaces(project, rig, cam))
+  const span = Math.max(b.wMm, b.hMm, b.dMm, 1000)
+  const reach = Math.max(300, span * 0.09)
+
+  const flat = faceBounds(projectFaces(rigFaces(project, rig, cam), cam))
+  const center = { x: (flat.x0 + flat.x1) / 2, y: (flat.y0 + flat.y1) / 2 }
+
+  const axes: Vec3[] = [
+    { x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 },
+    { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 },
+    { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 },
+  ]
+
+  return rig.marks.map((mark) => {
+    const a = markPoint(rig, mark.a)
+    const z = markPoint(rig, mark.b)
+    const d = { x: z.x - a.x, y: z.y - a.y, z: z.z - a.z }
+    const len = Math.hypot(d.x, d.y, d.z) || 1
+    const mid = { x: (a.x + z.x) / 2, y: (a.y + z.y) / 2, z: (a.z + z.z) / 2 }
+
+    let off = axes[0]
+    let best = -Infinity
+    for (const ax of axes) {
+      const along = Math.abs((ax.x * d.x + ax.y * d.y + ax.z * d.z) / len)
+      if (along > 0.7) continue
+      const q = projectPoint(
+        { x: mid.x + ax.x * reach, y: mid.y + ax.y * reach, z: mid.z + ax.z * reach },
+        cam,
+      )
+      const away = Math.hypot(q.x - center.x, q.y - center.y)
+      if (away > best) { best = away; off = ax }
+    }
+
+    return {
+      a, b: z,
+      off: { x: off.x * reach, y: off.y * reach, z: off.z * reach },
+      label: meters(len),
+    }
+  })
+}
+
+/**
+ * Todas as cotas da montagem — as marcadas à mão e, se ligadas, as
+ * automáticas — com o lado do deslocamento já resolvido pela projeção.
  *
  * O deslocamento cai sobre a peça numa vista e fora dela noutra, então o lado
  * é escolhido pelo que afasta a linha do centro do desenho. Resolver aqui é o
  * que faz a cota na tela e a cota na folha saírem iguais.
  */
 export function resolvedDimensions(project: Project, rig: Rig, cam: Camera): RigDim[] {
+  const marks = markDimensions(project, rig, cam)
+  if (!rig.showDimensions) return marks
+
   const dims = rigDimensions(project, rig)
-  if (!dims.length) return dims
+  if (!dims.length) return marks
 
   const b = faceBounds(projectFaces(rigFaces(project, rig, cam), cam))
   const center = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }
 
-  return dims.map((d) => {
+  const auto = dims.map((d) => {
     const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2, z: (d.a.z + d.b.z) / 2 }
     const away = (sign: number) => {
       const q = projectPoint(
@@ -316,4 +427,6 @@ export function resolvedDimensions(project: Project, rig: Rig, cam: Camera): Rig
     const sign = away(1) >= away(-1) ? 1 : -1
     return { ...d, off: { x: d.off.x * sign, y: d.off.y * sign, z: d.off.z * sign } }
   })
+
+  return [...auto, ...marks]
 }

@@ -191,6 +191,27 @@ export interface RigItem {
   color: string | null
 }
 
+/**
+ * Ponta de uma cota marcada à mão, presa à peça em que foi apanhada.
+ *
+ * As coordenadas são relativas à origem da peça: mover o praticável leva a
+ * cota junto, que é o que se espera de uma medida tirada sobre ele. Sem peça
+ * (`itemId` nulo), valem como coordenadas da cena.
+ */
+export interface RigPoint {
+  itemId: string | null
+  x: number
+  y: number
+  z: number
+}
+
+/** Uma cota marcada entre dois vértices da montagem. */
+export interface RigMark {
+  id: string
+  a: RigPoint
+  b: RigPoint
+}
+
 /** Uma montagem: o painel e o que o sustenta, vistos em conjunto. */
 export interface Rig {
   id: string
@@ -200,8 +221,10 @@ export interface Rig {
   view: 'isometrica' | 'frontal' | 'lateral' | 'superior'
   /** Desenha o piso de referência sob a montagem. */
   showGround: boolean
-  /** Cota as medidas gerais e as alturas de montagem. */
+  /** Cota sozinha as medidas gerais e as alturas de montagem. */
   showDimensions: boolean
+  /** Cotas marcadas à mão, de vértice a vértice. */
+  marks: RigMark[]
 }
 
 export interface Brand {

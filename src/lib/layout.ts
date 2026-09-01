@@ -19,7 +19,7 @@ import { sheetPanels } from './store'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
 import type { FieldId, PanelConfig, Project, Rig, Sheet } from '../types'
-import { rigBounds, rigFaces, resolvedDimensions } from './rigScene'
+import { endTicks, rigBounds, rigFaces, resolvedDimensions } from './rigScene'
 import { buildMaterials, materialLines } from './materials'
 import { faceBounds, project as project3d, projectFaces, VIEWS, VIEW_LABELS } from './scene3d'
 
@@ -403,7 +403,7 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
   // As cotas saem daqui com o lado do deslocamento já escolhido, o mesmo que
   // a tela usa — a folha desenha o que o ambiente 3D mostra.
   const cam = VIEWS[rig.view]
-  const dimLines = rig.showDimensions ? resolvedDimensions(project, rig, cam) : []
+  const dimLines = resolvedDimensions(project, rig, cam)
 
   // A envoltória inclui as cotas, senão elas escapariam da célula.
   for (const d of dimLines) {
@@ -428,7 +428,11 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
   const availH = ch - headH - tailH
   const spanW = bounds.x1 - bounds.x0 || 1
   const spanH = bounds.y1 - bounds.y0 || 1
-  const den = pickScale(spanW, spanH, availW * DRAWING.fillFactor, availH * DRAWING.fillFactor)
+  // A vista da montagem não anuncia escala — é uma isométrica, não uma
+  // projeção cotada em 1:50. Travá-la na escada de escalas normalizadas só
+  // desperdiçaria a célula, então ela ocupa o espaço que tem.
+  const fill = 0.94
+  const den = Math.max(spanW / Math.max(availW * fill, 1), spanH / Math.max(availH * fill, 1))
 
   const w = spanW / den
   const h = spanH / den
@@ -473,7 +477,7 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
       const q = project3d(v, cam)
       return { x: x + (q.x - bounds.x0) / den, y: y + (q.y - bounds.y0) / den }
     }
-    const dimSize = clamp(2.5 * k, 1.8, 2.5)
+    const dimSize = clamp(3.4 * k, 2.5, 3.4)
     for (const d of dimLines) {
       const a = to2d(d.a)
       const bb = to2d(d.b)
@@ -483,6 +487,9 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
       prims.push(line(a.x, a.y, ao.x, ao.y, COLORS.dim, 0.16))
       prims.push(line(bb.x, bb.y, bo.x, bo.y, COLORS.dim, 0.16))
       prims.push(line(ao.x, ao.y, bo.x, bo.y, COLORS.dim, 0.22))
+      for (const [t1, t2] of endTicks(ao, bo, dimSize * 0.5)) {
+        prims.push(line(t1.x, t1.y, t2.x, t2.y, COLORS.dim, 0.22))
+      }
       prims.push(
         text((ao.x + bo.x) / 2, (ao.y + bo.y) / 2 - 1, d.label, dimSize, COLORS.dim, {
           anchor: 'middle',

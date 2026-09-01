@@ -555,14 +555,45 @@ body {
   font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
 }
 
-.studio__float {
-  position: absolute; top: 12px; right: 12px; width: 296px;
-  max-height: calc(100% - 92px); overflow-y: auto;
-  padding: 9px; border: 1px solid var(--line); border-radius: 8px;
+/* Cartão da peça selecionada: só o que se ajusta olhando o desenho. O resto
+   das medidas está na coluna da direita, que já fala da montagem. */
+.studio__sel {
+  position: absolute; top: 12px; right: 12px; width: 218px;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px;
   background: rgba(22, 29, 40, .95); backdrop-filter: blur(4px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .4);
 }
-.studio__float .rigitem { border: 0; background: none; padding: 0; }
+.studio__sel header { display: flex; align-items: center; gap: 4px; }
+.studio__sel header strong {
+  flex: 1; min-width: 0; font-size: 11px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.studio__sel header button {
+  width: 21px; height: 21px; padding: 0; flex: 0 0 auto; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 5px;
+  background: var(--bg-3); color: var(--muted); font: inherit; font-size: 11px;
+}
+.studio__sel header button:hover { color: var(--text); }
+.studio__xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.studio__xyz label { display: flex; flex-direction: column; gap: 2px; }
+.studio__xyz span {
+  font-size: 9px; letter-spacing: .08em; color: var(--muted);
+}
+.studio__xyz input {
+  width: 100%; padding: 4px 5px; background: var(--bg-3);
+  border: 1px solid var(--line); border-radius: 4px;
+  color: var(--text); font: inherit; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.studio__xyz input:focus { outline: 2px solid var(--accent-2); outline-offset: -1px; }
+
+/* Marcação de cota: os vértices apanháveis aparecem só nesse modo. */
+.studio__svg.is-marking { cursor: crosshair; }
+.studio__vertex { fill: #7d93ad; fill-opacity: .5; pointer-events: none; }
+.studio__vertex.is-near { fill: #4c8dff; fill-opacity: 1; }
+.studio__vertex.is-on { fill: #f34136; fill-opacity: 1; }
+.studio__aim { stroke: #f34136; stroke-dasharray: 6 4; pointer-events: none; }
 
 .studio__hud {
   position: absolute; right: 12px; bottom: 12px;

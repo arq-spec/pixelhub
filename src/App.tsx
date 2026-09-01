@@ -6,6 +6,7 @@ import { SheetList } from './components/SheetList'
 import { PanelInspector } from './components/PanelInspector'
 import { SheetPreview } from './components/SheetPreview'
 import { Studio3D } from './components/Studio3D'
+import { RigInspector } from './components/RigInspector'
 import { sheetNumber } from './lib/layout'
 
 /** As duas vistas do projeto: a prancha e a montagem. */
@@ -15,11 +16,20 @@ export default function App() {
   const { project, dispatch, active } = useProject()
   const index = project.activeIndex
   const [workspace, setWorkspace] = useState<Workspace>('folha')
+  // Estado do ambiente 3D, compartilhado entre a tela e a coluna da direita:
+  // selecionar uma peça num lado a marca no outro.
   const [studioRigId, setStudioRigId] = useState<string | null>(null)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [marking, setMarking] = useState(false)
 
   const openStudio = (rigId: string) => {
     setStudioRigId(rigId)
     setWorkspace('ambiente')
+  }
+
+  const show = (next: Workspace) => {
+    setWorkspace(next)
+    if (next === 'folha') setMarking(false)
   }
 
   return (
@@ -38,14 +48,14 @@ export default function App() {
               <button
                 type="button"
                 className={`tab${workspace === 'folha' ? ' is-on' : ''}`}
-                onClick={() => setWorkspace('folha')}
+                onClick={() => show('folha')}
               >
                 Folha técnica
               </button>
               <button
                 type="button"
                 className={`tab${workspace === 'ambiente' ? ' is-on' : ''}`}
-                onClick={() => setWorkspace('ambiente')}
+                onClick={() => show('ambiente')}
               >
                 Ambiente 3D
               </button>
@@ -74,18 +84,38 @@ export default function App() {
               dispatch={dispatch}
               rigId={studioRigId}
               onRigId={setStudioRigId}
+              selectedId={selectedItemId}
+              onSelect={setSelectedItemId}
+              marking={marking}
+              onMarking={setMarking}
             />
           )}
         </main>
 
+        {/* A coluna da direita segue a aba: cada ambiente tem os seus controles. */}
         <aside className="panel panel--right">
-          <PanelInspector
-            project={project}
-            sheet={active}
-            index={index}
-            dispatch={dispatch}
-            onOpenStudio={openStudio}
-          />
+          {workspace === 'folha' ? (
+            <PanelInspector
+              project={project}
+              sheet={active}
+              index={index}
+              dispatch={dispatch}
+              onOpenStudio={openStudio}
+            />
+          ) : (
+            <RigInspector
+              project={project}
+              sheet={active}
+              index={index}
+              dispatch={dispatch}
+              rigId={studioRigId}
+              onRigId={setStudioRigId}
+              selectedId={selectedItemId}
+              onSelect={setSelectedItemId}
+              marking={marking}
+              onMarking={setMarking}
+            />
+          )}
         </aside>
       </div>
     </div>

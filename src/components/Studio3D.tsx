@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch } from 'react'
-import { RIG_LABELS, type Project, type Rig, type RigKind, type Sheet } from '../types'
+import {
+  RIG_LABELS,
+  type Project, type Rig, type RigKind, type RigPoint, type Sheet,
+} from '../types'
 import type { Action } from '../lib/store'
-import { rigBounds, rigFaces, resolvedDimensions } from '../lib/rigScene'
+import {
+  endTicks, rigBounds, rigFaces, rigVertices, resolvedDimensions,
+} from '../lib/rigScene'
 import {
   dragToScene, faceBounds, project as project3d, projectFaces, resolvesDepth,
-  VIEWS, VIEW_LABELS, type Camera, type DragAxis, type ViewId, type Vec3,
+  VIEWS, VIEW_LABELS, type Camera, type DragAxis, type Vec3, type ViewId,
 } from '../lib/scene3d'
 import { meters, num } from '../lib/format'
 import { Button, Toggle } from './ui'
-import { RigItemCard } from './RigEditor'
 
 /** Passo de encaixe do arrasto, em mm — mantém as peças alinhadas. */
 const SNAP = 50
@@ -50,11 +54,11 @@ type Gesture =
  * Ambiente 3D — a segunda vista do projeto, ao lado da folha técnica.
  *
  * A montagem é composta aqui: as peças entram pela paleta, são posicionadas no
- * arrasto e conferidas nas cotas. A vista marcada é a que a folha desenha, de
- * modo que o que se vê aqui é o que sai impresso.
+ * arrasto e cotadas de vértice a vértice. A vista marcada é a que a folha
+ * desenha, de modo que o que se vê aqui é o que sai impresso.
  */
 export function Studio3D({
-  project, sheet, index, dispatch, rigId, onRigId,
+  project, sheet, index, dispatch, rigId, onRigId, selectedId, onSelect, marking, onMarking,
 }: {
   project: Project
   sheet: Sheet
@@ -62,10 +66,13 @@ export function Studio3D({
   dispatch: Dispatch<Action>
   rigId: string | null
   onRigId: (id: string | null) => void
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  marking: boolean
+  onMarking: (on: boolean) => void
 }) {
   const rigs = project.rigs
   const rig = rigs.find((r) => r.id === rigId) ?? rigs[0] ?? null
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [cam, setCam] = useState<Camera>(VIEWS.isometrica)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -73,7 +80,7 @@ export function Studio3D({
   const fit = () => { setZoom(1); setPan({ x: 0, y: 0 }) }
 
   // Trocar de montagem sem reenquadrar deixaria a peça nova fora da tela.
-  useEffect(() => { fit(); setSelectedId(null) }, [rig?.id])
+  useEffect(() => { fit(); onSelect(null) }, [rig?.id])
 
   const selected = rig?.items.find((i) => i.id === selectedId) ?? null
 
@@ -85,6 +92,11 @@ export function Studio3D({
    * responde quando a vista a mostra — numa frontal, não há para onde ir.
    */
   const keys = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onMarking(false)
+      onSelect(null)
+      return
+    }
     if (!rig || !selected) return
     const far = e.shiftKey ? SNAP * 10 : SNAP
     const move = (d: Vec3) => {
@@ -110,14 +122,13 @@ export function Studio3D({
       case 'Delete':
       case 'Backspace':
         dispatch({ type: 'removeRigItem', rigId: rig.id, itemId: selected.id })
-        setSelectedId(null)
+        onSelect(null)
         return e.preventDefault()
-      case 'Escape':
-        return setSelectedId(null)
       default:
         return
     }
   }
+
   const dims = useMemo(
     () => (rig ? rigBounds(rigFaces(project, rig, cam)) : { wMm: 0, hMm: 0, dMm: 0 }),
     [project, rig, cam],
@@ -135,7 +146,8 @@ export function Studio3D({
             <p>
               A montagem reúne o painel e o que o sustenta — praticáveis de altura regulável,
               mãos francesas, volumes de palco. Depois de composta, a vista isométrica, frontal,
-              lateral ou superior entra na folha como desenho, com cotas e lista de materiais.
+              lateral ou superior entra na folha como desenho, com as cotas que você marcar e a
+              lista de materiais.
             </p>
             <Button variant="primary" onClick={() => dispatch({ type: 'addRig' })}>
               Criar montagem 3D
@@ -196,17 +208,17 @@ export function Studio3D({
           ))}
         </div>
         <div className="studio__tools-end">
+          <Button
+            variant={marking ? 'primary' : undefined}
+            title="Clique em dois vértices para criar a cota"
+            onClick={() => onMarking(!marking)}
+          >
+            {marking ? 'Cotando…' : 'Cotar'}
+          </Button>
           <Toggle
             checked={rig.showGround}
             onChange={(v) => dispatch({ type: 'patchRig', rigId: rig.id, patch: { showGround: v } })}
             label="Piso"
-          />
-          <Toggle
-            checked={rig.showDimensions}
-            onChange={(v) =>
-              dispatch({ type: 'patchRig', rigId: rig.id, patch: { showDimensions: v } })
-            }
-            label="Cotas"
           />
           <Toggle
             checked={active}
@@ -239,7 +251,8 @@ export function Studio3D({
           pan={pan}
           onPan={setPan}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={onSelect}
+          marking={marking}
           dispatch={dispatch}
         />
 
@@ -263,15 +276,45 @@ export function Studio3D({
         </div>
 
         {selected ? (
-          <div className="studio__float">
-            <RigItemCard
-              rigId={rig.id}
-              item={selected}
-              project={project}
-              dispatch={dispatch}
-              selected
-              onSelect={() => setSelectedId(selected.id)}
-            />
+          <div className="studio__sel">
+            <header>
+              <strong>{selected.name || RIG_LABELS[selected.kind]}</strong>
+              <button
+                type="button" title="Duplicar peça"
+                onClick={() =>
+                  dispatch({ type: 'duplicateRigItem', rigId: rig.id, itemId: selected.id })
+                }
+              >
+                ⧉
+              </button>
+              <button
+                type="button" title="Remover peça"
+                onClick={() => {
+                  dispatch({ type: 'removeRigItem', rigId: rig.id, itemId: selected.id })
+                  onSelect(null)
+                }}
+              >
+                ✕
+              </button>
+            </header>
+            <div className="studio__xyz">
+              {(['x', 'y', 'z'] as const).map((axis) => (
+                <label key={axis}>
+                  <span>{axis.toUpperCase()}</span>
+                  <input
+                    type="number"
+                    step={0.1}
+                    value={selected[axis] / 1000}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'patchRigItem', rigId: rig.id, itemId: selected.id,
+                        patch: { [axis]: (Number(e.target.value) || 0) * 1000 },
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
           </div>
         ) : null}
 
@@ -279,14 +322,22 @@ export function Studio3D({
           az {num(cam.az, 0)}° · el {num(cam.el, 0)}° · {num(zoom * 100, 0)}%
         </span>
         <p className="studio__hint">
-          Arraste uma peça para movê-la no piso; com <strong>Shift</strong>, na altura.
-          Arrastando o fundo, a vista gira; com <strong>Shift</strong>, ela desliza. A roda
-          aproxima. Com a peça selecionada, as <strong>setas</strong> a empurram de 5 em 5 cm
-          — <strong>Alt</strong> muda a altura, <strong>Shift</strong> anda meio metro e{' '}
-          <strong>Delete</strong> remove.
-          {resolvesDepth(cam)
-            ? null
-            : ' Nesta vista a tela não mostra profundidade, então o arrasto só resolve a largura.'}
+          {marking ? (
+            <>
+              Clique em <strong>dois vértices</strong> para criar a cota. Ela fica presa às
+              peças: mover a peça leva a medida junto. <strong>Esc</strong> sai da marcação.
+            </>
+          ) : (
+            <>
+              Arraste uma peça para movê-la no piso; com <strong>Shift</strong>, na altura.
+              Arrastando o fundo, a vista gira; com <strong>Shift</strong>, ela desliza. A roda
+              aproxima. Com a peça selecionada, as <strong>setas</strong> a empurram de 5 em 5 cm
+              — <strong>Alt</strong> muda a altura e <strong>Delete</strong> remove.
+              {resolvesDepth(cam)
+                ? null
+                : ' Nesta vista a tela não mostra profundidade, então o arrasto só resolve a largura.'}
+            </>
+          )}
         </p>
       </div>
     </div>
@@ -301,7 +352,7 @@ export function Studio3D({
  * enquadramento e o desenho fugiria debaixo do cursor.
  */
 function Stage({
-  project, rig, cam, onCam, zoom, onZoom, pan, onPan, selectedId, onSelect, dispatch,
+  project, rig, cam, onCam, zoom, onZoom, pan, onPan, selectedId, onSelect, marking, dispatch,
 }: {
   project: Project
   rig: Rig
@@ -313,19 +364,26 @@ function Stage({
   onPan: (p: { x: number; y: number }) => void
   selectedId: string | null
   onSelect: (id: string | null) => void
+  marking: boolean
   dispatch: Dispatch<Action>
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const gesture = useRef<Gesture | null>(null)
   const [frozen, setFrozen] = useState<string | null>(null)
+  /** Primeiro vértice de uma cota em curso, e o que está sob o cursor. */
+  const [pending, setPending] = useState<{ p: Vec3; itemId: string } | null>(null)
+  const [hover, setHover] = useState<Vec3 | null>(null)
 
   const faces = useMemo(() => rigFaces(project, rig, cam), [project, rig, cam])
   const projected = useMemo(() => projectFaces(faces, cam), [faces, cam])
   const b = useMemo(() => faceBounds(projected), [projected])
-  const dims = useMemo(
-    () => (rig.showDimensions ? resolvedDimensions(project, rig, cam) : []),
-    [project, rig, cam],
+  const dims = useMemo(() => resolvedDimensions(project, rig, cam), [project, rig, cam])
+  const verts = useMemo(
+    () => (marking ? rigVertices(faces).map((v) => ({ ...v, q: project3d(v.p, cam) })) : []),
+    [faces, cam, marking],
   )
+
+  useEffect(() => { if (!marking) { setPending(null); setHover(null) } }, [marking])
 
   // As cotas saem do desenho: sem elas na envoltória, escapariam da tela.
   const box = useMemo(() => {
@@ -373,7 +431,47 @@ function Stage({
     return { x: p.x, y: p.y }
   }
 
+  /** Guarda o vértice em relação à peça, para a cota acompanhá-la. */
+  const anchor = (v: { p: Vec3; itemId: string }): RigPoint => {
+    const item = rig.items.find((i) => i.id === v.itemId)
+    if (!item) return { itemId: null, x: v.p.x, y: v.p.y, z: v.p.z }
+    return { itemId: item.id, x: v.p.x - item.x, y: v.p.y - item.y, z: v.p.z - item.z }
+  }
+
+  /**
+   * O vértice sob o cursor.
+   *
+   * São muitos pontos apanháveis — cada canto de placa é um —, então nenhum
+   * deles se destaca sozinho: quem diz o que vai ser apanhado é o realce que
+   * segue o cursor.
+   */
+  const nearest = (e: React.PointerEvent) => {
+    const c = at(e)
+    let best: { p: Vec3; itemId: string } | null = null
+    let near = Math.max(viewW, viewH) / 22
+    for (const v of verts) {
+      const d = Math.hypot(v.q.x - c.x, v.q.y - c.y)
+      if (d < near) { near = d; best = { p: v.p, itemId: v.itemId } }
+    }
+    return best
+  }
+
+  /** Marcação de cota: cada clique apanha o vértice sob o cursor. */
+  const pick = (e: React.PointerEvent) => {
+    const best = nearest(e)
+    if (!best) return
+    if (!pending) { setPending(best); return }
+    const same =
+      Math.abs(pending.p.x - best.p.x) < 1 &&
+      Math.abs(pending.p.y - best.p.y) < 1 &&
+      Math.abs(pending.p.z - best.p.z) < 1
+    if (same) { setPending(null); return }
+    dispatch({ type: 'addRigMark', rigId: rig.id, a: anchor(pending), b: anchor(best) })
+    setPending(null)
+  }
+
   const down = (e: React.PointerEvent) => {
+    if (marking) { pick(e); return }
     const itemId = (e.target as SVGElement).dataset?.item
     const p = at(e)
     if (itemId) {
@@ -400,6 +498,7 @@ function Stage({
   }
 
   const move = (e: React.PointerEvent) => {
+    if (marking) { setHover(nearest(e)?.p ?? null); return }
     const g = gesture.current
     if (!g) return
     if (g.kind === 'orbit') {
@@ -437,7 +536,7 @@ function Stage({
   return (
     <svg
       ref={svgRef}
-      className="studio__svg"
+      className={`studio__svg${marking ? ' is-marking' : ''}`}
       viewBox={vb}
       preserveAspectRatio="xMidYMid meet"
       onPointerDown={down}
@@ -452,11 +551,11 @@ function Stage({
           <g key={i}>
             <polygon
               data-item={f.itemId}
-              className={f.itemId ? 'studio__face' : undefined}
+              className={f.itemId && !marking ? 'studio__face' : undefined}
               points={f.pts.map((p) => `${p.x},${p.y}`).join(' ')}
               fill={f.fill}
               stroke={on ? '#f34136' : f.stroke}
-              strokeWidth={on ? hair * 3 : hair}
+              strokeWidth={on ? hair * 2 : hair}
               strokeLinejoin="round"
             />
             {(f.lines ?? []).map((w, j) => (
@@ -473,20 +572,24 @@ function Stage({
       })}
 
       {dims.map((d, i) => {
-        const to2d = (v: { x: number; y: number; z: number }) => project3d(v, cam)
+        const to2d = (v: Vec3) => project3d(v, cam)
         const a = to2d(d.a)
         const bb = to2d(d.b)
         const ao = to2d({ x: d.a.x + d.off.x, y: d.a.y + d.off.y, z: d.a.z + d.off.z })
         const bo = to2d({ x: d.b.x + d.off.x, y: d.b.y + d.off.y, z: d.b.z + d.off.z })
+        const tick = span * 0.009
         return (
           <g key={`d${i}`} className="studio__dim">
-            <line x1={a.x} y1={a.y} x2={ao.x} y2={ao.y} strokeWidth={hair} />
-            <line x1={bb.x} y1={bb.y} x2={bo.x} y2={bo.y} strokeWidth={hair} />
-            <line x1={ao.x} y1={ao.y} x2={bo.x} y2={bo.y} strokeWidth={hair * 1.4} />
+            <line x1={a.x} y1={a.y} x2={ao.x} y2={ao.y} strokeWidth={hair * 0.8} />
+            <line x1={bb.x} y1={bb.y} x2={bo.x} y2={bo.y} strokeWidth={hair * 0.8} />
+            <line x1={ao.x} y1={ao.y} x2={bo.x} y2={bo.y} strokeWidth={hair * 1.6} />
+            {endTicks(ao, bo, tick).map(([p1, p2], j) => (
+              <line key={j} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} strokeWidth={hair * 1.6} />
+            ))}
             <text
               x={(ao.x + bo.x) / 2}
-              y={(ao.y + bo.y) / 2 - span * 0.006}
-              fontSize={span * 0.017}
+              y={(ao.y + bo.y) / 2 - span * 0.008}
+              fontSize={span * 0.019}
               textAnchor="middle"
             >
               {d.label}
@@ -494,6 +597,35 @@ function Stage({
           </g>
         )
       })}
+
+      {marking ? (
+        <g>
+          {pending && hover ? (
+            <line
+              className="studio__aim"
+              x1={project3d(pending.p, cam).x} y1={project3d(pending.p, cam).y}
+              x2={project3d(hover, cam).x} y2={project3d(hover, cam).y}
+              strokeWidth={hair * 1.4}
+            />
+          ) : null}
+          {verts.map((v, i) => {
+            const same = (o: Vec3 | null | undefined) =>
+              !!o && Math.abs(o.x - v.p.x) < 1 && Math.abs(o.y - v.p.y) < 1 &&
+              Math.abs(o.z - v.p.z) < 1
+            const on = same(pending?.p)
+            const near = same(hover)
+            return (
+              <circle
+                key={`v${i}`}
+                className={`studio__vertex${on ? ' is-on' : near ? ' is-near' : ''}`}
+                cx={v.q.x}
+                cy={v.q.y}
+                r={hair * (on || near ? 5.5 : 2)}
+              />
+            )
+          })}
+        </g>
+      ) : null}
     </svg>
   )
 }
