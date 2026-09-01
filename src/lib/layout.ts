@@ -148,8 +148,11 @@ export function specLines(
     .filter(([id]) => sheet.fields[id] !== false)
     .map(([, l, v]) => [l, v] as [string, string])
 
-  if (sheet.fields.reparticoes !== false) {
-    for (const region of derivedRegions(panel, m)) {
+  const regions = derivedRegions(panel, m)
+  // Painel sem divisão tem uma "parte" só, que é ele inteiro: repetir a
+  // medida logo abaixo da linha PAINEL não informa nada.
+  if (sheet.fields.reparticoes !== false && regions.length > 1) {
+    for (const region of regions) {
       const rm = regionMetrics(m, region)
       if (!rm) continue
       lines.push([
