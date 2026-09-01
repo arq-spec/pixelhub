@@ -198,6 +198,8 @@ export interface Rig {
   view: 'isometrica' | 'frontal' | 'lateral' | 'superior'
   /** Desenha o piso de referência sob a montagem. */
   showGround: boolean
+  /** Cota as medidas gerais e as alturas de montagem. */
+  showDimensions: boolean
 }
 
 export interface Brand {

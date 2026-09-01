@@ -81,6 +81,10 @@ processador enxerga o painel.
   pórtico incluso), praticável de palco com altura de perna regulável, mão
   francesa e volumes genéricos. Cada peça tem posição em X, Y e Z, e pode ser
   repetida com passo — três praticáveis em fila são uma peça só.
+  **Cotas** marcam a largura, a altura e a profundidade da montagem, mais as
+  alturas que o montador procura: a que o painel fica do chão e a do tampo do
+  praticável, já com a regulagem das pernas. O lado de cada cota é escolhido
+  pela projeção, de modo a cair fora do desenho nas quatro vistas.
   Cada peça duplica com um botão — a cópia entra ao lado da original, e depois
   de uma fila de repetições começa onde a fila termina, sem sobrepor.
   As peças se posicionam **arrastando na própria vista**: arrastar uma peça a

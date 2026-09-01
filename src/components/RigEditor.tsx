@@ -137,19 +137,20 @@ export function RigEditor({
 }: { project: Project; sheet: Sheet; index: number; dispatch: Dispatch<Action> }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [zoomRigId, setZoomRigId] = useState<string | null>(null)
   // O ângulo livre é da tela; a folha usa a vista escolhida na montagem.
   const [cam, setCam] = useState<Camera>(VIEWS.isometrica)
 
   const rigs = project.rigs
   const selected =
     rigs.flatMap((r) => r.items).find((i) => i.id === selectedId) ?? null
+  const zoomRig = rigs.find((r) => r.id === zoomRigId) ?? null
 
   return (
     <Section
       title={`Montagens (${sheet.activeRigIds.length}/${rigs.length})`}
       collapsible
       storageKey="pixelhub.ui.rigs"
-      defaultOpen={false}
       summary={rigs.length ? `${rigs.length} no projeto` : 'nenhuma'}
       action={
         <Button variant="primary" onClick={() => dispatch({ type: 'addRig' })}>
@@ -157,10 +158,23 @@ export function RigEditor({
         </Button>
       }
     >
-      <p className="hint">
-        A montagem reúne o painel e o que o sustenta — praticáveis, mãos francesas, volumes.
-        Marcada na folha, ela entra na prancha como uma vista, ao lado dos painéis.
-      </p>
+      {rigs.length === 0 ? (
+        <div className="empty">
+          <strong>Ambiente 3D</strong>
+          <p>
+            Monte a composição do evento — o painel sobre praticáveis, escorado por mãos
+            francesas — e leve a vista isométrica, frontal, lateral ou superior para a folha.
+          </p>
+          <Button variant="primary" onClick={() => dispatch({ type: 'addRig' })}>
+            Criar montagem 3D
+          </Button>
+        </div>
+      ) : (
+        <p className="hint">
+          A montagem reúne o painel e o que o sustenta — praticáveis, mãos francesas, volumes.
+          Marcada na folha, ela entra na prancha como uma vista, ao lado dos painéis.
+        </p>
+      )}
 
       {rigs.map((rig) => {
         const active = sheet.activeRigIds.includes(rig.id)
@@ -235,6 +249,11 @@ export function RigEditor({
                     </span>
                   ) : null}
                 </div>
+                <div className="shape__modes">
+                  <Button onClick={() => setZoomRigId(rig.id)} title="Editar em tela cheia">
+                    Ampliar 3D
+                  </Button>
+                </div>
                 <p className="hint">
                   Arraste uma peça para movê-la no piso; com <strong>Shift</strong>, na altura.
                   Arrastando o fundo, a vista gira. As posições encaixam de 5 em 5 cm.
@@ -267,6 +286,11 @@ export function RigEditor({
                   checked={rig.showGround}
                   onChange={(v) => dispatch({ type: 'patchRig', rigId: rig.id, patch: { showGround: v } })}
                   label="Mostrar o piso"
+                />
+                <Toggle
+                  checked={rig.showDimensions}
+                  onChange={(v) => dispatch({ type: 'patchRig', rigId: rig.id, patch: { showDimensions: v } })}
+                  label="Cotar medidas e alturas"
                 />
 
                 <div className="regions__head">
@@ -306,6 +330,52 @@ export function RigEditor({
           </div>
         )
       })}
+
+      {zoomRig ? (
+        <div className="overlay" role="dialog" aria-label="Montagem em tela cheia">
+          <div className="overlay__panel">
+            <header className="overlay__head">
+              <strong>{zoomRig.name || 'MONTAGEM'}</strong>
+              <span>{VIEW_LABELS[zoomRig.view]} · az {num(cam.az, 0)}° · el {num(cam.el, 0)}°</span>
+              <Button onClick={() => setZoomRigId(null)}>Fechar</Button>
+            </header>
+            <div className="overlay__body">
+              <div className="rig3d rig3d--full">
+                <Viewport
+                  project={project}
+                  rig={zoomRig}
+                  cam={cam}
+                  onCam={setCam}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  dispatch={dispatch}
+                />
+                {selected ? (
+                  <span className="rig3d__sel">
+                    {selected.name || RIG_LABELS[selected.kind]} · X {meters(selected.x)} · Y{' '}
+                    {meters(selected.y)} · Z {meters(selected.z)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="chips">
+              {(Object.keys(VIEWS) as ViewId[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chip${zoomRig.view === v ? ' is-on' : ''}`}
+                  onClick={() => {
+                    dispatch({ type: 'patchRig', rigId: zoomRig.id, patch: { view: v } })
+                    setCam(VIEWS[v])
+                  }}
+                >
+                  {VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </Section>
   )
 }

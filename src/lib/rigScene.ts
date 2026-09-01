@@ -143,11 +143,17 @@ export function rigFaces(project: Project, rig: Rig): Face[] {
   return faces
 }
 
-/** Envoltória da montagem em milímetros, para o quadro de dados. */
+/**
+ * Envoltória da montagem em milímetros.
+ *
+ * O piso é ignorado: ele é uma referência visual, desenhada com folga em volta
+ * das peças, e entraria somando essa folga à medida informada na folha.
+ */
 export function rigBounds(faces: Face[]) {
   let x0 = Infinity, y0 = Infinity, z0 = Infinity
   let x1 = -Infinity, y1 = -Infinity, z1 = -Infinity
   for (const f of faces) {
+    if (!f.itemId) continue
     for (const p of f.pts) {
       x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
       y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y)
@@ -156,4 +162,79 @@ export function rigBounds(faces: Face[]) {
   }
   if (!Number.isFinite(x0)) return { wMm: 0, hMm: 0, dMm: 0 }
   return { wMm: x1 - x0, hMm: y1 - y0, dMm: z1 - z0 }
+}
+
+
+/** Uma cota da montagem: o trecho medido e o rótulo. */
+export interface RigDim {
+  a: Vec3
+  b: Vec3
+  /** Deslocamento da linha de cota em relação ao trecho medido. */
+  off: Vec3
+  label: string
+}
+
+/**
+ * Cotas da montagem: as três medidas gerais e as alturas que importam para
+ * montar — a que o painel fica do chão e a do tampo do praticável.
+ */
+export function rigDimensions(project: Project, rig: Rig): RigDim[] {
+  const faces = rigFaces(project, rig)
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity
+  let x1 = -Infinity, y1 = -Infinity, z1 = -Infinity
+  for (const f of faces) {
+    if (!f.itemId) continue
+    for (const p of f.pts) {
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
+      y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y)
+      z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z)
+    }
+  }
+  if (!Number.isFinite(x0)) return []
+
+  const span = Math.max(x1 - x0, y1 - y0, z1 - z0)
+  const off = Math.max(300, span * 0.09)
+  const m = (mm: number) => `${(mm / 1000).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })}m`
+
+  const dims: RigDim[] = [
+    {
+      a: { x: x0, y: y0, z: z0 }, b: { x: x1, y: y0, z: z0 },
+      off: { x: 0, y: 0, z: -off }, label: m(x1 - x0),
+    },
+    {
+      a: { x: x0, y: y0, z: z0 }, b: { x: x0, y: y1, z: z0 },
+      off: { x: -off, y: 0, z: 0 }, label: m(y1 - y0),
+    },
+    {
+      a: { x: x1, y: y0, z: z0 }, b: { x: x1, y: y0, z: z1 },
+      off: { x: off, y: 0, z: 0 }, label: m(z1 - z0),
+    },
+  ]
+
+  // Altura do painel em relação ao chão: a medida que o montador procura.
+  const panel = rig.items.find((i) => i.kind === 'painel' && i.y > 0)
+  if (panel) {
+    dims.push({
+      a: { x: panel.x, y: 0, z: panel.z },
+      b: { x: panel.x, y: panel.y, z: panel.z },
+      off: { x: -off * 0.45, y: 0, z: -off * 0.45 },
+      label: m(panel.y),
+    })
+  }
+
+  // Altura do tampo do praticável, já com a regulagem das pernas.
+  const deck = rig.items.find((i) => i.kind === 'praticavel')
+  if (deck) {
+    const top = deck.y + deck.legMm + deck.hMm
+    dims.push({
+      a: { x: deck.x, y: 0, z: deck.z + deck.dMm },
+      b: { x: deck.x, y: top, z: deck.z + deck.dMm },
+      off: { x: -off * 0.45, y: 0, z: off * 0.45 },
+      label: m(top),
+    })
+  }
+
+  return dims
 }

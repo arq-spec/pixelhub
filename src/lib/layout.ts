@@ -19,8 +19,8 @@ import { sheetPanels } from './store'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
 import type { FieldId, PanelConfig, Project, Rig, Sheet } from '../types'
-import { rigBounds, rigFaces } from './rigScene'
-import { faceBounds, projectFaces, VIEWS, VIEW_LABELS } from './scene3d'
+import { rigBounds, rigDimensions, rigFaces } from './rigScene'
+import { faceBounds, project as project3d, projectFaces, VIEWS, VIEW_LABELS } from './scene3d'
 
 export type Anchor = 'start' | 'middle' | 'end'
 
@@ -395,8 +395,44 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
 
   const faces = rigFaces(project, rig)
   const projected = projectFaces(faces, VIEWS[rig.view])
-  const bounds = faceBounds(projected)
   const dims = rigBounds(faces)
+
+  const bounds = faceBounds(projected)
+
+  /**
+   * Cotas já resolvidas: para cada uma, o lado do deslocamento é escolhido
+   * pelo que afasta a linha do centro do desenho. O mesmo deslocamento cai
+   * sobre a peça numa vista e fora dela noutra, então decidir por projeção
+   * vale para as quatro.
+   */
+  const cam = VIEWS[rig.view]
+  const center = { x: (bounds.x0 + bounds.x1) / 2, y: (bounds.y0 + bounds.y1) / 2 }
+  const dimLines = rig.showDimensions
+    ? rigDimensions(project, rig).map((d) => {
+        const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2, z: (d.a.z + d.b.z) / 2 }
+        const away = (sign: number) => {
+          const q = project3d(
+            { x: mid.x + d.off.x * sign, y: mid.y + d.off.y * sign, z: mid.z + d.off.z * sign },
+            cam,
+          )
+          return Math.hypot(q.x - center.x, q.y - center.y)
+        }
+        const sign = away(1) >= away(-1) ? 1 : -1
+        return {
+          ...d,
+          off: { x: d.off.x * sign, y: d.off.y * sign, z: d.off.z * sign },
+        }
+      })
+    : []
+
+  // A envoltória inclui as cotas, senão elas escapariam da célula.
+  for (const d of dimLines) {
+    for (const v of [d.a, d.b]) {
+      const q = project3d({ x: v.x + d.off.x, y: v.y + d.off.y, z: v.z + d.off.z }, cam)
+      bounds.x0 = Math.min(bounds.x0, q.x); bounds.x1 = Math.max(bounds.x1, q.x)
+      bounds.y0 = Math.min(bounds.y0, q.y); bounds.y1 = Math.max(bounds.y1, q.y)
+    }
+  }
 
   const lines: Array<[string, string]> = [
     ['VISTA:', VIEW_LABELS[rig.view]],
@@ -441,6 +477,30 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
       stroke: face.stroke,
       width: face.width,
     })
+  }
+
+  if (dimLines.length) {
+    activeLayer = LAYERS.dims
+    const to2d = (v: { x: number; y: number; z: number }) => {
+      const q = project3d(v, cam)
+      return { x: x + (q.x - bounds.x0) / den, y: y + (q.y - bounds.y0) / den }
+    }
+    const dimSize = clamp(2.5 * k, 1.8, 2.5)
+    for (const d of dimLines) {
+      const a = to2d(d.a)
+      const bb = to2d(d.b)
+      const ao = to2d({ x: d.a.x + d.off.x, y: d.a.y + d.off.y, z: d.a.z + d.off.z })
+      const bo = to2d({ x: d.b.x + d.off.x, y: d.b.y + d.off.y, z: d.b.z + d.off.z })
+      // Linhas de chamada até a linha de cota, como num desenho técnico.
+      prims.push(line(a.x, a.y, ao.x, ao.y, COLORS.dim, 0.16))
+      prims.push(line(bb.x, bb.y, bo.x, bo.y, COLORS.dim, 0.16))
+      prims.push(line(ao.x, ao.y, bo.x, bo.y, COLORS.dim, 0.22))
+      prims.push(
+        text((ao.x + bo.x) / 2, (ao.y + bo.y) / 2 - 1, d.label, dimSize, COLORS.dim, {
+          anchor: 'middle',
+        }),
+      )
+    }
   }
 
   activeLayer = LAYERS.text

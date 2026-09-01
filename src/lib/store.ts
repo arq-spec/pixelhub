@@ -80,6 +80,7 @@ export function makeRig(partial?: Partial<Rig>): Rig {
     items: [],
     view: 'isometrica',
     showGround: true,
+    showDimensions: true,
     ...partial,
   }
 }
