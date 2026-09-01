@@ -66,6 +66,11 @@ export function PanelInspector({
           onChange={(v) => setSheet({ showColorLegend: v })}
           label="Mostrar as cores no quadro de legendas"
         />
+        <Toggle
+          checked={sheet.showMaterials}
+          onChange={(v) => setSheet({ showMaterials: v })}
+          label="Listar os materiais da folha"
+        />
       </Section>
 
       <Section

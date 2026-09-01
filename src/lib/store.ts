@@ -93,6 +93,7 @@ export function makeSheet(partial?: Partial<Sheet>): Sheet {
     numberOverride: null,
     showDimensions: false,
     showColorLegend: true,
+    showMaterials: false,
     activePanelIds: [],
     activeRigIds: [],
     ...partial,

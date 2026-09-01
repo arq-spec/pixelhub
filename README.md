@@ -101,6 +101,12 @@ processador enxerga o painel.
   primitivas vetoriais da folha, com as faces ordenadas do fundo para a frente.
   É o que faz a isométrica sair no PDF e no DXF como geometria — na camada
   `PH-MONTAGEM` — e não como imagem.
+- **Lista de materiais** — soma no quadro de legendas as placas dos painéis e
+  as peças das montagens marcadas na folha, por tipo e medida, com peso e
+  consumo totais. As placas contam pelo tamanho real de cada posição, então
+  uma fileira de preenchimento 0,50×0,50 aparece separada das 0,50×1,00 e um
+  recorte aparece com a sua própria medida — que é como a equipe separa na
+  hora de carregar.
 - **Carimbo** — evento, título da folha, desenhista, data do evento, emissão e
   número da folha. **Data do evento em branco imprime `A DEFINIR`.**
 - **Legendas** — bloco de observações livre, uma por linha, com quebra
@@ -180,6 +186,7 @@ src/
     layout.ts           monta a folha como primitivas geométricas em mm
     scene3d.ts          projeção ortogonal da cena 3D para o plano do desenho
     rigScene.ts         monta a cena da montagem a partir das peças
+    materials.ts        soma placas e peças por tipo e medida
     sheetSpec.ts        geometria da prancha A3, medida sobre o PDF de referência
     measure.ts          métrica da Helvetica, para centralizar texto sem DOM
     store.ts            estado do projeto, reducer e persistência

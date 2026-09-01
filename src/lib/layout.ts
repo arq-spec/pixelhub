@@ -20,6 +20,7 @@ import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
 import type { FieldId, PanelConfig, Project, Rig, Sheet } from '../types'
 import { rigBounds, rigDimensions, rigFaces } from './rigScene'
+import { buildMaterials, materialLines } from './materials'
 import { faceBounds, project as project3d, projectFaces, VIEWS, VIEW_LABELS } from './scene3d'
 
 export type Anchor = 'start' | 'middle' | 'end'
@@ -610,6 +611,7 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
     })
   }
 
+  let colorsBottom = legendBottom
   if (legendEntries.length) {
     const top = legendBottom + 8
     prims.push(
@@ -635,6 +637,31 @@ export function buildSheetLayout(project: Project, sheet: Sheet, index: number):
         ),
       )
     })
+    colorsBottom = top + 5.4 + (legendEntries.length - 1) * 6.2
+  }
+
+  // ------------------------------------------------------------ materiais
+  if (sheet.showMaterials) {
+    const list = buildMaterials(project, sheet)
+    const lines = materialLines(list)
+    if (lines.length) {
+      const top = colorsBottom + 8
+      prims.push(
+        text(SIDEBAR.x0, top, 'MATERIAIS:', LEGEND.obsSize, COLORS.slate, {
+          bold: true, tracking: LEGEND.obsTracking,
+        }),
+      )
+      const size = LEGEND.itemSize * 0.82
+      lines.forEach(([qty, label], i) => {
+        const rowY = top + 5.2 + i * 5.4
+        if (qty) {
+          prims.push(text(SIDEBAR.x0, rowY, qty, size, COLORS.navy, { bold: true }))
+        }
+        prims.push(
+          text(SIDEBAR.x0 + 7, rowY, label, fitSize(label, SIDEBAR_W - 7, size), COLORS.slateText),
+        )
+      })
+    }
   }
 
   // ------------------------------------------------------- logotipo/carimbo

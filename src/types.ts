@@ -151,6 +151,8 @@ export interface Sheet {
   fields: FieldVisibility
   /** Mostra as cores dos painéis no quadro de legendas. */
   showColorLegend: boolean
+  /** Lista de materiais no quadro de legendas. */
+  showMaterials: boolean
 }
 
 /** Tipos de peça que compõem uma montagem. */
