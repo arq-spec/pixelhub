@@ -466,20 +466,6 @@ body {
 }
 
 /* ------------------------------------------------------------ montagem 3D */
-.rig3d {
-  position: relative;
-  background: #0f141c; border: 1px solid var(--line); border-radius: 6px;
-  aspect-ratio: 4 / 3; touch-action: none; cursor: grab;
-  display: grid; place-items: center; overflow: hidden;
-}
-.rig3d:active { cursor: grabbing; }
-.rig3d__svg { width: 100%; height: 100%; display: block; }
-.rig3d__angle {
-  position: absolute; right: 7px; bottom: 6px;
-  font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;
-  background: rgba(15, 20, 28, .8); padding: 1px 6px; border-radius: 4px;
-}
-
 .rigitem {
   display: flex; flex-direction: column; gap: 8px;
   padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-2);
@@ -492,14 +478,6 @@ body {
 
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
-.rig3d__face { cursor: grab; }
-.rig3d__face:active { cursor: grabbing; }
-.rig3d__sel {
-  position: absolute; left: 7px; bottom: 6px;
-  font-size: 10px; color: var(--text); font-variant-numeric: tabular-nums;
-  background: rgba(15, 20, 28, .85); padding: 2px 7px; border-radius: 4px;
-  border: 1px solid var(--accent);
-}
 .rigitem.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* Estado vazio de uma seção: explica o recurso e oferece a ação. */
@@ -511,5 +489,89 @@ body {
 .empty strong { font-size: 12px; }
 .empty p { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.55; }
 
-.rig3d--full { aspect-ratio: auto; flex: 1; min-height: 0; }
-.overlay__body .rig3d { width: 100%; }
+
+/* --------------------------------------------------------- ambiente 3D */
+/* As duas vistas do projeto — a prancha e a montagem — dividem a área central. */
+.tabs { display: flex; gap: 4px; }
+.tab {
+  padding: 5px 12px; border-radius: 6px;
+  border: 1px solid transparent; background: none;
+  color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.is-on {
+  color: var(--text); background: var(--bg-3); border-color: var(--line);
+}
+
+.studio { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.studio__bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 16px; border-bottom: 1px solid var(--line);
+  background: var(--bg-2); font-size: 12px; color: var(--muted);
+}
+.studio__title { font-size: 12px; color: var(--text); }
+.studio__size { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.studio__tools {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding: 7px 16px; border-bottom: 1px solid var(--line); background: var(--bg-2);
+}
+.studio__tools-end { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.studio__stage {
+  position: relative; outline: none; flex: 1; min-height: 0; overflow: hidden;
+  /* Fundo claro de propósito: a cena usa as mesmas cores da folha, então a
+     tela mostra o desenho como ele sai impresso. */
+  background: radial-gradient(circle at 50% 40%, #ffffff 0%, #e7ecf3 82%);
+  touch-action: none;
+}
+.studio__stage--empty {
+  display: grid; place-items: center; padding: 32px;
+  background: repeating-conic-gradient(#12181f 0% 25%, #141b23 0% 50%) 50% / 22px 22px;
+}
+.studio__stage--empty .empty { max-width: 520px; background: var(--bg-2); }
+
+.studio__svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+.studio__svg:active { cursor: grabbing; }
+.studio__face { cursor: grab; }
+.studio__face:active { cursor: grabbing; }
+.studio__dim line { stroke: #8794a6; }
+.studio__dim text {
+  fill: #5b6a7d; font-family: inherit;
+  paint-order: stroke; stroke: #fff; stroke-width: .35em; stroke-linejoin: round;
+}
+
+.studio__none { position: absolute; inset: 0; display: grid; place-items: center; }
+
+/* Painéis flutuantes sobre a cena: as ações ficam onde o olhar já está. */
+.studio__palette {
+  position: absolute; top: 12px; left: 12px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 60%;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
+  background: rgba(22, 29, 40, .92); backdrop-filter: blur(4px);
+}
+.studio__label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+}
+
+.studio__float {
+  position: absolute; top: 12px; right: 12px; width: 296px;
+  max-height: calc(100% - 92px); overflow-y: auto;
+  padding: 9px; border: 1px solid var(--line); border-radius: 8px;
+  background: rgba(22, 29, 40, .95); backdrop-filter: blur(4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+}
+.studio__float .rigitem { border: 0; background: none; padding: 0; }
+
+.studio__hud {
+  position: absolute; right: 12px; bottom: 12px;
+  font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  background: rgba(15, 20, 28, .85); padding: 3px 8px; border-radius: 5px;
+}
+.studio__hint {
+  position: absolute; left: 12px; bottom: 12px; max-width: 470px; margin: 0;
+  font-size: 10.5px; line-height: 1.5; color: var(--muted);
+  background: rgba(15, 20, 28, .85); padding: 5px 9px; border-radius: 5px;
+}
+.studio__hint strong { color: var(--text); }

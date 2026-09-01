@@ -33,13 +33,21 @@ export const VIEW_LABELS: Record<ViewId, string> = {
 
 const rad = (deg: number) => (deg * Math.PI) / 180
 
-/** Projeta um ponto da cena no plano do desenho. */
+/**
+ * Projeta um ponto da cena no plano do desenho.
+ *
+ * Com a câmera acima da linha do horizonte, o que está mais longe sobe na
+ * tela — é daí que vem a leitura de profundidade da isométrica. O eixo
+ * vertical da projeção tem de concordar com `depthOf`: se discordarem, a face
+ * de cima de uma peça é ordenada como próxima mas desenhada como se fosse
+ * vista por baixo, e cai por cima do que deveria estar na frente dela.
+ */
 export function project(p: Vec3, cam: Camera): { x: number; y: number } {
   const a = rad(cam.az)
   const e = rad(cam.el)
   const px = p.x * Math.cos(a) - p.z * Math.sin(a)
   const pz = p.x * Math.sin(a) + p.z * Math.cos(a)
-  return { x: px, y: -(p.y * Math.cos(e) - pz * Math.sin(e)) }
+  return { x: px, y: -(p.y * Math.cos(e) + pz * Math.sin(e)) }
 }
 
 /** Profundidade de um ponto: quanto maior, mais longe do observador. */
@@ -49,13 +57,43 @@ export function depthOf(p: Vec3, cam: Camera): number {
   return p.x * Math.sin(a) * Math.cos(e) - p.y * Math.sin(e) + p.z * Math.cos(a) * Math.cos(e)
 }
 
+/**
+ * Quanto um passo de 1 mm em Z afasta o ponto do observador.
+ *
+ * Positivo quer dizer que o fundo da cena tem Z maior. É o que decide qual
+ * das duas faces de uma peça plana está virada para a câmera.
+ */
+export const depthPerZ = (cam: Camera) => depthOf({ x: 0, y: 0, z: 1 }, cam)
+
+/** Traçado sem preenchimento desenhado junto de uma face. */
+export interface Wire {
+  pts: Vec3[]
+  stroke: string
+  width: number
+}
+
 export interface Face {
   pts: Vec3[]
   fill: string
   stroke: string
   width: number
-  /** Faces sem preenchimento não escondem o que está atrás. */
-  wire?: boolean
+  /**
+   * Traçados presos à face, desenhados logo depois dela.
+   *
+   * Uma linha sobre o próprio plano da face não pode ser ordenada junto com o
+   * resto: coplanares empatam em profundidade e metade delas acaba coberta
+   * pelo preenchimento que deveriam riscar. Presas à face, saem sempre por
+   * cima dela e sempre por baixo do que estiver à frente.
+   */
+  lines?: Wire[]
+  /**
+   * Fundo de cena: desenhado antes de todo o resto, sem disputar ordem.
+   *
+   * O piso é uma face enorme e a ordenação olha só o centro dela: metade das
+   * peças cai mais longe que esse centro e seria apagada pelo piso. Como ele é
+   * pano de fundo, e não volume, sai da disputa.
+   */
+  back?: boolean
   /** Peça a que a face pertence, para seleção e arrasto na vista. */
   itemId?: string
 }
@@ -106,13 +144,20 @@ export function wedge(
   ]
 }
 
+export interface ProjectedWire {
+  pts: Array<{ x: number; y: number }>
+  stroke: string
+  width: number
+}
+
 export interface ProjectedFace {
   pts: Array<{ x: number; y: number }>
   fill: string
   stroke: string
   width: number
   depth: number
-  wire?: boolean
+  lines?: ProjectedWire[]
+  back?: boolean
   itemId?: string
 }
 
@@ -131,12 +176,20 @@ export function projectFaces(faces: Face[], cam: Camera): ProjectedFace[] {
         fill: f.fill,
         stroke: f.stroke,
         width: f.width,
-        wire: f.wire,
+        lines: f.lines?.map((w) => ({
+          pts: w.pts.map((p) => project(p, cam)),
+          stroke: w.stroke,
+          width: w.width,
+        })),
+        back: f.back,
         itemId: f.itemId,
         depth: depth / f.pts.length,
       }
     })
-    .sort((a, b) => b.depth - a.depth)
+    .sort((a, b) => {
+      if (!!a.back !== !!b.back) return a.back ? -1 : 1
+      return b.depth - a.depth
+    })
 }
 
 export interface Bounds { x0: number; y0: number; x1: number; y1: number }
@@ -175,7 +228,7 @@ export function dragToScene(
   }
 
   const se = Math.sin(e)
-  const dpz = Math.abs(se) < 0.15 ? 0 : dy / se
+  const dpz = Math.abs(se) < 0.15 ? 0 : -dy / se
   return {
     x: dx * Math.cos(a) + dpz * Math.sin(a),
     y: 0,

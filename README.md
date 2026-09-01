@@ -86,12 +86,23 @@ processador enxerga o painel.
   praticável, já com a regulagem das pernas. O lado de cada cota é escolhido
   pela projeção, de modo a cair fora do desenho nas quatro vistas.
   Cada peça duplica com um botão — a cópia entra ao lado da original, e depois
-  de uma fila de repetições começa onde a fila termina, sem sobrepor.
-  As peças se posicionam **arrastando na própria vista**: arrastar uma peça a
-  move no piso, com *Shift* move na altura, e arrastar o fundo gira a câmera.
-  As posições encaixam de 5 em 5 cm e os campos numéricos acompanham. A vista
-  sai na folha em **isométrica, frontal, lateral ou superior**, ao lado dos
-  painéis, com a envoltória da montagem no quadro.
+  de uma fila de repetições começa onde a fila termina, sem sobrepor. Peça nova
+  também nasce ao lado do que já existe, nunca dentro da anterior.
+
+  O **ambiente 3D** é uma sessão inteira, ao lado da folha técnica: as duas
+  ficam em abas no alto da área de desenho. Ele traz a paleta de peças, a
+  montagem em tamanho de tela, as cotas, o piso quadriculado de metro em metro
+  — que é o que dá noção de escala — e o cartão da peça selecionada sobre a
+  cena. A vista gira arrastando o fundo, desliza com *Shift*, aproxima na roda
+  e volta ao enquadramento com um botão. Com uma peça selecionada, as setas a
+  empurram de 5 em 5 cm (meio metro com *Shift*, altura com *Alt*) e *Delete* a
+  remove. Arrastar move a peça no piso; com *Shift*, na altura. O enquadramento
+  congela durante o arrasto, senão o desenho fugiria debaixo do cursor.
+
+  O fundo da tela é claro de propósito: a cena usa as mesmas cores da folha,
+  então o que se vê no ambiente é o que sai impresso. A vista marcada nas
+  abas — **isométrica, frontal, lateral ou superior** — é a que entra na folha,
+  ao lado dos painéis, com a envoltória da montagem no quadro.
 
   Numa vista frontal a tela não carrega profundidade, então lá o arrasto no
   piso só resolve a largura — a dica na interface avisa, para não parecer que
@@ -101,6 +112,22 @@ processador enxerga o painel.
   primitivas vetoriais da folha, com as faces ordenadas do fundo para a frente.
   É o que faz a isométrica sair no PDF e no DXF como geometria — na camada
   `PH-MONTAGEM` — e não como imagem.
+
+  Três detalhes do desenho valem por si, porque cada um deles apareceu como um
+  painel vazado na tela:
+
+  - O eixo vertical da projeção tem de concordar com o cálculo de
+    profundidade. Discordando, a face de cima de uma peça é ordenada como
+    próxima e desenhada como se fosse vista por baixo: ela cai sobre o que
+    deveria estar à sua frente.
+  - O painel é uma chapa fina dividida em muitas placas, e o algoritmo do
+    pintor ordena face a face. A placa do fundo de um trecho fica mais perto do
+    observador que a placa da frente de outro, as duas se intercalam e o painel
+    aparece vazado. Como as duas faces do painel são planas e paralelas, dá
+    para saber qual delas a câmera vê e descartar a outra antes de ordenar.
+  - O piso é uma face enorme e a ordenação olha só o centro dela: metade das
+    peças cai mais longe que esse centro e seria apagada por ele. Ele é pano de
+    fundo, não volume, e sai da disputa.
 - **Lista de materiais** — soma no quadro de legendas as placas dos painéis e
   as peças das montagens marcadas na folha, por tipo e medida, com peso e
   consumo totais. As placas contam pelo tamanho real de cada posição, então
@@ -194,5 +221,8 @@ src/
       svg.ts            primitivas -> SVG
       pdf.ts            SVG -> PDF vetorial (jsPDF + svg2pdf)
       dxf.ts            primitivas -> DXF R12
-  components/           interface de edição
+  components/
+    Studio3D.tsx        ambiente 3D: a montagem em tamanho de tela
+    RigEditor.tsx       montagens do projeto e as peças de cada uma
+    ...                 demais telas de edição
 ```

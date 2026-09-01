@@ -19,7 +19,7 @@ import { sheetPanels } from './store'
 import { eventDateLabel, isoToBr, meters, num } from './format'
 import { fitSize, textWidth, wrapText } from './measure'
 import type { FieldId, PanelConfig, Project, Rig, Sheet } from '../types'
-import { rigBounds, rigDimensions, rigFaces } from './rigScene'
+import { rigBounds, rigFaces, resolvedDimensions } from './rigScene'
 import { buildMaterials, materialLines } from './materials'
 import { faceBounds, project as project3d, projectFaces, VIEWS, VIEW_LABELS } from './scene3d'
 
@@ -400,31 +400,10 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
 
   const bounds = faceBounds(projected)
 
-  /**
-   * Cotas já resolvidas: para cada uma, o lado do deslocamento é escolhido
-   * pelo que afasta a linha do centro do desenho. O mesmo deslocamento cai
-   * sobre a peça numa vista e fora dela noutra, então decidir por projeção
-   * vale para as quatro.
-   */
+  // As cotas saem daqui com o lado do deslocamento já escolhido, o mesmo que
+  // a tela usa — a folha desenha o que o ambiente 3D mostra.
   const cam = VIEWS[rig.view]
-  const center = { x: (bounds.x0 + bounds.x1) / 2, y: (bounds.y0 + bounds.y1) / 2 }
-  const dimLines = rig.showDimensions
-    ? rigDimensions(project, rig).map((d) => {
-        const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2, z: (d.a.z + d.b.z) / 2 }
-        const away = (sign: number) => {
-          const q = project3d(
-            { x: mid.x + d.off.x * sign, y: mid.y + d.off.y * sign, z: mid.z + d.off.z * sign },
-            cam,
-          )
-          return Math.hypot(q.x - center.x, q.y - center.y)
-        }
-        const sign = away(1) >= away(-1) ? 1 : -1
-        return {
-          ...d,
-          off: { x: d.off.x * sign, y: d.off.y * sign, z: d.off.z * sign },
-        }
-      })
-    : []
+  const dimLines = rig.showDimensions ? resolvedDimensions(project, rig, cam) : []
 
   // A envoltória inclui as cotas, senão elas escapariam da célula.
   for (const d of dimLines) {
@@ -467,17 +446,25 @@ function drawRigCell(prims: Prim[], project: Project, rig: Rig, cell: Cell) {
   }
 
   activeLayer = LAYERS.rig
+  const onSheet = (p: { x: number; y: number }) => ({
+    x: x + (p.x - bounds.x0) / den,
+    y: y + (p.y - bounds.y0) / den,
+  })
   for (const face of projected) {
     prims.push({
       kind: 'poly', layer: LAYERS.rig,
-      pts: face.pts.map((p) => ({
-        x: x + (p.x - bounds.x0) / den,
-        y: y + (p.y - bounds.y0) / den,
-      })),
+      pts: face.pts.map(onSheet),
       fill: face.fill,
       stroke: face.stroke,
       width: face.width,
     })
+    for (const w of face.lines ?? []) {
+      for (let i = 1; i < w.pts.length; i++) {
+        const a = onSheet(w.pts[i - 1])
+        const b = onSheet(w.pts[i])
+        prims.push(line(a.x, a.y, b.x, b.y, w.stroke, w.width))
+      }
+    }
   }
 
   if (dimLines.length) {

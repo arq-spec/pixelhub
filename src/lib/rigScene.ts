@@ -1,6 +1,9 @@
 import type { PanelConfig, Project, Rig, RigItem } from '../types'
 import { cellRects, computeMetrics, hasPlate, outlineOf } from './calc'
-import { box, wedge, type Face, type Vec3 } from './scene3d'
+import {
+  box, depthPerZ, faceBounds, projectFaces, project as projectPoint, wedge, VIEWS,
+  type Camera, type Face, type Vec3, type Wire,
+} from './scene3d'
 import { COLORS } from './sheetSpec'
 import { tint } from './layout'
 
@@ -15,8 +18,18 @@ const SHADE = {
 
 const stroke = COLORS.moduleStroke
 
-/** Placas do painel como volume, respeitando o formato livre. */
-function panelFaces(item: RigItem, panel: PanelConfig | null): Face[] {
+/**
+ * Placas do painel como volume, respeitando o formato livre.
+ *
+ * A face escondida do painel é descartada antes da ordenação. O painel é uma
+ * chapa fina dividida em muitas placas, e o algoritmo do pintor ordena face a
+ * face: numa vista inclinada, a placa do fundo de um trecho fica mais perto do
+ * observador que a placa da frente de outro trecho, as duas se intercalam e o
+ * painel aparece vazado. Como as duas faces são planas e paralelas, dá para
+ * saber qual delas a câmera vê sem ordenar nada — e a que sobra não disputa
+ * profundidade com ninguém, porque suas placas são coplanares.
+ */
+function panelFaces(item: RigItem, panel: PanelConfig | null, cam: Camera): Face[] {
   const faces: Face[] = []
   const fill = item.color ? tint(item.color, 0.72) : SHADE.panel
   const style = { fill, stroke, width: 0.25 }
@@ -35,12 +48,21 @@ function panelFaces(item: RigItem, panel: PanelConfig | null): Face[] {
 
   const p = (x: number, y: number, z: number): Vec3 => ({ x, y, z })
 
+  // De perfil as duas faces se projetam na mesma linha: aí nenhuma esconde a
+  // outra e as duas ficam.
+  const away = depthPerZ(cam)
+  const planes: number[] = []
+  if (away > 1e-6) planes.push(item.z)
+  else if (away < -1e-6) planes.push(item.z + d)
+  else planes.push(item.z, item.z + d)
+
   for (const c of cellRects(m, (col, row) => hasPlate(panel, col, row))) {
     const x0 = px(c.x0), x1 = px(c.x1)
     const y0 = py(c.y1), y1 = py(c.y0)
-    // Frente e fundo por placa: é o que deixa a modulação visível.
-    faces.push({ pts: [p(x0, y0, item.z), p(x1, y0, item.z), p(x1, y1, item.z), p(x0, y1, item.z)], ...style })
-    faces.push({ pts: [p(x0, y0, item.z + d), p(x1, y0, item.z + d), p(x1, y1, item.z + d), p(x0, y1, item.z + d)], ...style })
+    // Uma placa por vez na face visível: é o que deixa a modulação aparecer.
+    for (const z of planes) {
+      faces.push({ pts: [p(x0, y0, z), p(x1, y0, z), p(x1, y1, z), p(x0, y1, z)], ...style })
+    }
   }
 
   // As laterais só existem no contorno da forma: num pórtico, contornam o vão.
@@ -79,8 +101,13 @@ function deckFaces(item: RigItem): Face[] {
   return faces
 }
 
-/** Peças de uma montagem, já com as repetições resolvidas. */
-export function rigFaces(project: Project, rig: Rig): Face[] {
+/**
+ * Peças de uma montagem, já com as repetições resolvidas.
+ *
+ * A câmera entra aqui porque a cena depende dela: peças planas descartam a
+ * face que o observador não vê. Sem ela vale a vista escolhida na folha.
+ */
+export function rigFaces(project: Project, rig: Rig, cam: Camera = VIEWS[rig.view]): Face[] {
   const faces: Face[] = []
   const panelById = new Map(project.panels.map((p) => [p.id, p]))
 
@@ -91,7 +118,7 @@ export function rigFaces(project: Project, rig: Rig): Face[] {
       let made: Face[]
       switch (item.kind) {
         case 'painel':
-          made = panelFaces(at, at.panelId ? panelById.get(at.panelId) ?? null : null)
+          made = panelFaces(at, at.panelId ? panelById.get(at.panelId) ?? null : null, cam)
           break
         case 'praticavel':
           made = deckFaces(at)
@@ -118,29 +145,53 @@ export function rigFaces(project: Project, rig: Rig): Face[] {
   }
 
   if (rig.showGround && faces.length) {
-    // Piso de referência: dá o apoio visual sem competir com as peças.
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
-    for (const f of faces) {
-      for (const p of f.pts) {
-        x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
-        z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z)
-      }
-    }
-    const pad = 600
-    faces.unshift({
-      pts: [
-        { x: x0 - pad, y: 0, z: z0 - pad },
-        { x: x1 + pad, y: 0, z: z0 - pad },
-        { x: x1 + pad, y: 0, z: z1 + pad },
-        { x: x0 - pad, y: 0, z: z1 + pad },
-      ],
-      fill: SHADE.ground,
-      stroke: COLORS.dash,
-      width: 0.2,
-    })
+    faces.unshift(...groundFaces(faces))
   }
 
   return faces
+}
+
+/**
+ * Piso de referência: uma laje sob as peças, riscada de metro em metro.
+ *
+ * A malha é o que dá noção de tamanho na vista isométrica — sem ela, um painel
+ * de 3 m e um de 12 m desenham igual. As linhas são traçado sem preenchimento,
+ * então não escondem nada do que está apoiado nelas.
+ */
+function groundFaces(faces: Face[]): Face[] {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+  for (const f of faces) {
+    for (const p of f.pts) {
+      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
+      z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z)
+    }
+  }
+  const step = 1000
+  const pad = 500
+  const gx0 = Math.floor((x0 - pad) / step) * step
+  const gx1 = Math.ceil((x1 + pad) / step) * step
+  const gz0 = Math.floor((z0 - pad) / step) * step
+  const gz1 = Math.ceil((z1 + pad) / step) * step
+
+  const grid: Wire[] = []
+  for (let x = gx0 + step; x < gx1; x += step) {
+    grid.push({ pts: [{ x, y: 0, z: gz0 }, { x, y: 0, z: gz1 }], stroke: COLORS.dash, width: 0.12 })
+  }
+  for (let z = gz0 + step; z < gz1; z += step) {
+    grid.push({ pts: [{ x: gx0, y: 0, z }, { x: gx1, y: 0, z }], stroke: COLORS.dash, width: 0.12 })
+  }
+
+  return [{
+    pts: [
+      { x: gx0, y: 0, z: gz0 }, { x: gx1, y: 0, z: gz0 },
+      { x: gx1, y: 0, z: gz1 }, { x: gx0, y: 0, z: gz1 },
+    ],
+    fill: SHADE.ground,
+    stroke: COLORS.dash,
+    width: 0.2,
+    lines: grid,
+    back: true,
+  }]
 }
 
 /**
@@ -237,4 +288,32 @@ export function rigDimensions(project: Project, rig: Rig): RigDim[] {
   }
 
   return dims
+}
+
+/**
+ * As mesmas cotas, com o lado do deslocamento já resolvido pela projeção.
+ *
+ * O deslocamento cai sobre a peça numa vista e fora dela noutra, então o lado
+ * é escolhido pelo que afasta a linha do centro do desenho. Resolver aqui é o
+ * que faz a cota na tela e a cota na folha saírem iguais.
+ */
+export function resolvedDimensions(project: Project, rig: Rig, cam: Camera): RigDim[] {
+  const dims = rigDimensions(project, rig)
+  if (!dims.length) return dims
+
+  const b = faceBounds(projectFaces(rigFaces(project, rig, cam), cam))
+  const center = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }
+
+  return dims.map((d) => {
+    const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2, z: (d.a.z + d.b.z) / 2 }
+    const away = (sign: number) => {
+      const q = projectPoint(
+        { x: mid.x + d.off.x * sign, y: mid.y + d.off.y * sign, z: mid.z + d.off.z * sign },
+        cam,
+      )
+      return Math.hypot(q.x - center.x, q.y - center.y)
+    }
+    const sign = away(1) >= away(-1) ? 1 : -1
+    return { ...d, off: { x: d.off.x * sign, y: d.off.y * sign, z: d.off.z * sign } }
+  })
 }

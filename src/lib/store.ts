@@ -171,6 +171,18 @@ function mapRig(state: Project, rigId: string, fn: (r: Rig) => Rig): Project {
   return { ...state, rigs: state.rigs.map((r) => (r.id === rigId ? fn(r) : r)) }
 }
 
+/** Onde uma peça nova cabe sem cair sobre as que já estão na montagem. */
+function nextFreeX(state: Project, rig: Rig): number {
+  let right = 0
+  for (const i of rig.items) {
+    const panel = i.panelId ? state.panels.find((p) => p.id === i.panelId) : null
+    const w = panel ? panel.widthMm : i.wMm
+    const runs = Math.max(1, Math.round(i.count)) - 1
+    right = Math.max(right, i.x + runs * i.stepMm + w)
+  }
+  return right ? right + 500 : 0
+}
+
 /** Aplica uma transformação à folha em `index`, mantendo o resto intacto. */
 function mapSheet(state: Project, index: number, fn: (s: Sheet) => Sheet): Project {
   return { ...state, sheets: state.sheets.map((s, i) => (i === index ? fn(s) : s)) }
@@ -386,7 +398,16 @@ export function reducer(state: Project, action: Action): Project {
     case 'addRigItem':
       return mapRig(state, action.rigId, (r) => ({
         ...r,
-        items: [...r.items, makeRigItem(action.kind, { panelId: action.panelId ?? null })],
+        items: [
+          ...r.items,
+          makeRigItem(action.kind, {
+            panelId: action.panelId ?? null,
+            // A peça nova entra ao lado do que já existe. Nascer na origem
+            // esconderia a peça dentro da anterior, e o primeiro gesto no
+            // ambiente seria sempre arrastá-la para fora.
+            x: nextFreeX(state, r),
+          }),
+        ],
       }))
 
     case 'duplicateRigItem':

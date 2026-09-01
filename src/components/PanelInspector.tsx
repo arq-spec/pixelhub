@@ -18,8 +18,14 @@ const MODULE_PRESETS = [
 ]
 
 export function PanelInspector({
-  project, sheet, index, dispatch,
-}: { project: Project; sheet: Sheet; index: number; dispatch: Dispatch<Action> }) {
+  project, sheet, index, dispatch, onOpenStudio,
+}: {
+  project: Project
+  sheet: Sheet
+  index: number
+  dispatch: Dispatch<Action>
+  onOpenStudio: (rigId: string) => void
+}) {
   // Recolher é estado de tela, não do documento: some ao recarregar de
   // propósito, para a lista sempre abrir no mesmo estado conhecido.
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
@@ -124,7 +130,13 @@ export function PanelInspector({
         ) : null}
       </Section>
 
-      <RigEditor project={project} sheet={sheet} index={index} dispatch={dispatch} />
+      <RigEditor
+        project={project}
+        sheet={sheet}
+        index={index}
+        dispatch={dispatch}
+        onOpenStudio={onOpenStudio}
+      />
 
       <Section
         title="Informações na folha"
